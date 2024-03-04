@@ -206,8 +206,11 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
             student_data_samples.append(student_results['data_samples'])
         student_imgs = torch.cat(student_imgs).to(img)
         
+        ### --
         ### Threshold for stochastic restoration   
         rst_thresh = 0.01
+        ### --
+        
 
         with torch.enable_grad():
             model.requires_grad_(True)
@@ -219,6 +222,7 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
                     teacher_data_samples, student_data_samples) ### Update Student
                 self.teacher.update_parameters(model) ### Update Teacher
                 
+                ### --
                 ### Stochastically restore student's weights
                 for nm, m  in model.named_modules():
                     for npp, p in m.named_parameters():
@@ -226,6 +230,7 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
                             mask = (torch.rand(p.shape) < rst_thresh).float().cuda() # For values < rst_thresh put 1, restore this weight
                             with torch.no_grad():
                                 p.data = self.source_model_state[f"{nm}.{npp}"] * mask + p * (1.0-mask) ### Restore weights using saved initial_model_state
+                ### --
 
         self._reset_optimizer()
 
