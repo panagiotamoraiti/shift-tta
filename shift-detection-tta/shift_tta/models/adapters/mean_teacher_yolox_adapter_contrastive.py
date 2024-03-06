@@ -15,8 +15,8 @@ from .base_adapter import BaseAdapter
 
 
 @MODELS.register_module()
-class MeanTeacherYOLOXAdapter(BaseAdapter):
-    """Mean-teacher YOLOX adapter model.
+class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
+    """Mean-teacher YOLOX adapter model with contrastive loss.
 
     Args:
         teacher (dict): Configuration of teacher. Defaults to None.
@@ -29,11 +29,15 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
 
     def __init__(self,
                  teacher: Optional[dict] = None,
+                 stochastic_restoration: bool = False,
+                 rst_prob: float = 0.01,
                  optim_wrapper: Optional[dict] = None,
                  optim_steps: int = 0,
                  loss: Optional[dict] = dict(
                      type='ROIConsistencyLoss',
-                     weight=0.01,
+                     weight_consistency_loss = 0.01,
+                     weight_contrastive_loss = 0.01,
+                     contrastive = False
                  ),
                  pipeline: Optional[list[dict]] = None,
                  teacher_pipeline: Optional[list[dict]] = None,
@@ -60,6 +64,9 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
         self.teacher_pipeline = Compose(teacher_pipeline)
         self.student_pipeline = Compose(student_pipeline)
         self.views = views
+        self.stochastic_restoration = stochastic_restoration
+        self.rst_prob = rst_prob
+        
 
         # TODO: implement param_scheduler for optimizer (e.g. lr decay)
 
@@ -78,7 +85,7 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
             self.teacher_cfg['model'] = model
             self.teacher = MODELS.build(self.teacher_cfg)
             self.teacher_model_state = deepcopy(self.teacher.state_dict())
-        
+
 
     def _reset_optimizer(self) -> None:
         """Reset optimizer state.
@@ -105,6 +112,12 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
         """Detector forward pass."""
         feats = detector.extract_feat(img)
         outs = detector.bbox_head.forward(feats)
+        
+        ### --Multi-scale features
+        n_last_stages = 3
+        num_stages = len(feats) # 3 stages for yolo
+        last_feats = feats[num_stages-n_last_stages:] ### Get features from the last n_last_stages
+        ### --
 
         batch_img_metas = [
             data_samples.metainfo for data_samples in batch_data_samples
@@ -114,7 +127,7 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
         det_results = detector.add_pred_to_datasample(
             batch_data_samples, predictions)
 
-        return det_results, outs
+        return det_results, outs, last_feats
 
     def _expand_view(self, outs: Tuple[torch.Tensor], views: int = 1):
         """Expand batch size of each element in outs to views."""
@@ -129,9 +142,12 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
                student_data_samples: List[TrackDataSample],
                *args, **kwargs) -> InstanceData:
         """Adapt the model."""
+        # Extract image width and height
+        img_height = teacher_img.shape[2]
+        img_width = teacher_img.shape[3]
 
         # teacher forward ### -> self.teacher.module is the teacher
-        teacher_det_results, teacher_outs = self._detect_forward(
+        teacher_det_results, teacher_outs, teacher_last_feats = self._detect_forward(
             self.teacher.module.detector, teacher_img, teacher_data_samples)
         teacher_outs = self._expand_view(teacher_outs, views=self.views)
         teacher_outs = dict(
@@ -140,16 +156,18 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
             objectness=teacher_outs[2])
 
         # student forward ### -> model is the student
-        _, outs = self._detect_forward(
+        _, outs, student_last_feats = self._detect_forward(
             model.detector, student_imgs, student_data_samples)
         outs = dict(
             cls_score=outs[0],
             bbox_pred=outs[1],
             objectness=outs[2])
-            
+        
+        ### --Consistency-Contrastive loss (includes multi-scale features)
+        loss = self.loss(outs, teacher_outs, teacher_last_feats, student_last_feats, img_width, img_height)
+        ### --
 
         # adapt student
-        loss = self.loss(outs, teacher_outs)
         loss.backward()
         self.optim_wrapper.step()
         self.optim_wrapper.zero_grad()
@@ -207,12 +225,6 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
             student_data_samples.append(student_results['data_samples'])
         student_imgs = torch.cat(student_imgs).to(img)
         
-        ### --
-        ### Threshold for stochastic restoration   
-        rst_thresh = 0.01
-        ### --
-        
-
         with torch.enable_grad():
             model.requires_grad_(True)
             model.train(True)
@@ -223,14 +235,14 @@ class MeanTeacherYOLOXAdapter(BaseAdapter):
                     teacher_data_samples, student_data_samples) ### Update Student
                 self.teacher.update_parameters(model) ### Update Teacher
                 
-                ### --
-                ### Stochastically restore student's weights
-                for nm, m  in model.named_modules():
-                    for npp, p in m.named_parameters():
-                        if npp in ['weight', 'bias'] and p.requires_grad:
-                            mask = (torch.rand(p.shape) < rst_thresh).float().cuda() # For values < rst_thresh put 1, restore this weight
-                            with torch.no_grad():
-                                p.data = self.source_model_state[f"{nm}.{npp}"] * mask + p * (1.0-mask) ### Restore weights using saved initial_model_state
+                ### --Stochastically restore student's weights
+                if self.stochastic_restoration: 
+                    for nm, m  in model.named_modules():
+                        for npp, p in m.named_parameters():
+                            if npp in ['weight', 'bias'] and p.requires_grad:
+                                mask = (torch.rand(p.shape) < self.rst_prob).float().cuda() # For values < rst_thresh put 1, restore this weight
+                                with torch.no_grad():
+                                    p.data = self.source_model_state[f"{nm}.{npp}"] * mask + p * (1.0-mask) ### Restore weights using saved initial_model_state
                 ### --
 
         self._reset_optimizer()

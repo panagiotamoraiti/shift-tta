@@ -8,8 +8,8 @@ dataset_type = 'SHIFTDataset'
 data_root = 'data/shift/'
 attributes = dict(weather_coarse='clear', timeofday_coarse='daytime')
 
-img_scale = (800*0.75, 1440*0.75)
-batch_size = 2
+img_scale = (800*0.75, 1440*0.75) ### * 0.75
+batch_size = 1 ### 2
 
 model = dict(
     type='AdaptiveDetector',
@@ -33,7 +33,7 @@ model = dict(
             'https://download.openmmlab.com/mmdetection/v2.0/yolox/yolox_x_8x8_300e_coco/yolox_x_8x8_300e_coco_20211126_140254-1ef88d67.pth'  # noqa: E501
         )),
     adapter=dict(
-        type='MeanTeacherYOLOXAdapter',
+        type='MeanTeacherYOLOXAdapterContrastive', ### Use Mean Teacher with Contrastive loss
         episodic=True,  # do NOT change this. episodic must be set to True for the WVCL ICCV 2023 SHIFT Challenges 
         optim_wrapper=dict(
             type='OptimWrapper',
@@ -46,9 +46,13 @@ model = dict(
             momentum=0.0002, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight
             update_buffers=True),
         loss=dict(
-            type='YOLOXConsistencyLoss',
-            weight=0.01,
+            type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
+            weight_consistency_loss=0.01,
+            weight_contrastive_loss=0.01,
+            contrastive=False
         ),
+        stochastic_restoration=False,
+        rst_prob=0.01,
         pipeline = [
             dict(type='LoadImageFromFile',
                 backend_args=dict(
@@ -67,19 +71,19 @@ model = dict(
             dict(type='mmtrack.PackTrackInputs', pack_single_img=True),
         ],
         student_pipeline = [
-            # dict(type='mmdet.YOLOXHSVRandomAug'),
-            dict(type='mmdet.RandomFlip', prob=0.5, direction='horizontal'), # New augmentation
-            dict(
-                type='mmdet.Albu',
-                    transforms=[
-                        dict(type='ColorJitter', brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.8), # New augmentation
-                    ],),
-            dict(type='mmdet.RandomGrayscale', prob=0.2, keep_channels=True), # New augmentation 
-            dict(
-                type='mmdet.Albu',
-                    transforms=[
-                        dict(type='GaussianBlur', sigma_limit=[0.1, 2.0], p=0.5), # New augmentation
-                    ],),
+            dict(type='mmdet.YOLOXHSVRandomAug'),
+            #dict(type='mmdet.RandomFlip', prob=0.5, direction='horizontal'), # New augmentation
+            #dict(
+            #    type='mmdet.Albu',
+            #        transforms=[
+            #            dict(type='ColorJitter', brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.8), # New augmentation
+            #        ],),
+            #dict(type='mmdet.RandomGrayscale', prob=0.2, keep_channels=True), # New augmentation 
+            #dict(
+            #    type='mmdet.Albu',
+            #        transforms=[
+            #            dict(type='GaussianBlur', sigma_limit=[0.1, 2.0], p=0.5), # New augmentation
+            #        ],),
             # dict(
             #     type='mmdet.Albu',
             #         transforms=[
