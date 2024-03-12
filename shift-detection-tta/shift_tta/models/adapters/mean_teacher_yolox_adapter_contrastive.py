@@ -2,7 +2,7 @@
 from typing import List, Optional, Tuple
 
 import torch
-
+import matplotlib.pyplot as plt
 from copy import deepcopy
 
 from mmengine.dataset import Compose
@@ -37,7 +37,8 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
                      type='ROIConsistencyLoss',
                      weight_consistency_loss = 0.01,
                      weight_contrastive_loss = 0.01,
-                     contrastive = False
+                     contrastive = False,
+                     filter_pseudo_labels=None
                  ),
                  pipeline: Optional[list[dict]] = None,
                  teacher_pipeline: Optional[list[dict]] = None,
@@ -67,6 +68,12 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         self.stochastic_restoration = stochastic_restoration
         self.rst_prob = rst_prob
         
+        # Initialize lists to track losses
+        self.consistency_losses = []
+        self.contrastive_losses = []
+        self.final_losses = []
+        self.steps = []
+        self.s = 0
 
         # TODO: implement param_scheduler for optimizer (e.g. lr decay)
 
@@ -112,22 +119,23 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         """Detector forward pass."""
         feats = detector.extract_feat(img)
         outs = detector.bbox_head.forward(feats)
-        
-        ### --Multi-scale features
-        n_last_stages = 3
-        num_stages = len(feats) # 3 stages for yolo
-        last_feats = feats[num_stages-n_last_stages:] ### Get features from the last n_last_stages
-        ### --
 
         batch_img_metas = [
             data_samples.metainfo for data_samples in batch_data_samples
         ]
         predictions = detector.bbox_head.predict_by_feat(
             *outs, batch_img_metas=batch_img_metas, rescale=rescale)
+            
+        ### Define new config object with score_thr = 0
+        cfg_orig = deepcopy(detector.bbox_head.test_cfg)
+        cfg_orig['score_thr'] = 0
+        orig_predictions = detector.bbox_head.predict_by_feat(
+            *outs, batch_img_metas=batch_img_metas, with_nms=False, rescale=rescale, cfg=cfg_orig) ### Without NMS and without filtering
+            
         det_results = detector.add_pred_to_datasample(
             batch_data_samples, predictions)
 
-        return det_results, outs, last_feats
+        return det_results, outs, feats, predictions, orig_predictions
 
     def _expand_view(self, outs: Tuple[torch.Tensor], views: int = 1):
         """Expand batch size of each element in outs to views."""
@@ -147,24 +155,83 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         img_width = teacher_img.shape[3]
 
         # teacher forward ### -> self.teacher.module is the teacher
-        teacher_det_results, teacher_outs, teacher_last_feats = self._detect_forward(
+        teacher_det_results, teacher_outs, teacher_feats, teacher_predictions, teacher_orig_predictions = self._detect_forward(
             self.teacher.module.detector, teacher_img, teacher_data_samples)
         teacher_outs = self._expand_view(teacher_outs, views=self.views)
+              
         teacher_outs = dict(
             cls_score=teacher_outs[0],
             bbox_pred=teacher_outs[1],
             objectness=teacher_outs[2])
 
         # student forward ### -> model is the student
-        _, outs, student_last_feats = self._detect_forward(
+        _, outs, student_feats, student_predictions, student_orig_predictions = self._detect_forward(
             model.detector, student_imgs, student_data_samples)
         outs = dict(
             cls_score=outs[0],
             bbox_pred=outs[1],
-            objectness=outs[2])
-        
+            objectness=outs[2])       
+            
+        '''print(len(teacher_orig_predictions[0].bboxes))
+        print(len(student_orig_predictions[0].bboxes))
+        print()
+        print(len(teacher_predictions[0].bboxes))
+        print(len(student_predictions[0].bboxes))
+        print()'''
+            
         ### --Consistency-Contrastive loss (includes multi-scale features)
-        loss = self.loss(outs, teacher_outs, teacher_last_feats, student_last_feats, img_width, img_height)
+        loss, consistency_loss, contrastive_loss = self.loss(outs, teacher_outs, teacher_feats, student_feats, teacher_orig_predictions, student_orig_predictions, img_width, img_height)
+        
+        self.s +=1
+        if self.s % self.optim_steps == 0:
+            self.steps.append(self.s)
+            self.final_losses.append(loss.detach().cpu().numpy())
+            self.consistency_losses.append(consistency_loss.detach().cpu().numpy())
+            self.contrastive_losses.append(contrastive_loss.detach().cpu().numpy())
+            print("Step:", self.s//self.optim_steps)
+            print("Consistency loss:", consistency_loss)
+            print("Contrastive loss:", contrastive_loss)
+            print("Final loss:", loss)
+            print()
+
+        epochs = 2400 # Number of images
+        if self.s == epochs*self.optim_steps:
+            print("Saving plots...")
+            # Plot Consistency Loss
+            plt.figure(figsize=(10, 6))
+            plt.plot(self.steps, self.consistency_losses, label='Consistency Loss', linewidth=2, color='blue')
+            plt.xlabel('Steps')
+            plt.ylabel('Consistency Loss')
+            plt.title('Consistency Loss over Steps')
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig('consistency_loss_plot.png')
+            plt.close()
+
+            # Plot Contrastive Loss
+            plt.figure(figsize=(10, 6))
+            plt.plot(self.steps, self.contrastive_losses, label='Contrastive Loss', linewidth=2, color='green')
+            plt.xlabel('Steps')
+            plt.ylabel('Contrastive Loss')
+            plt.title('Contrastive Loss over Steps')
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig('contrastive_loss_plot.png')
+            plt.close()
+
+            # Plot Final Loss
+            plt.figure(figsize=(10, 6))
+            plt.plot(self.steps, self.final_losses, label='Final Loss', linewidth=2, color='red')
+            plt.xlabel('Steps')
+            plt.ylabel('Final Loss')
+            plt.title('Final Loss over Steps')
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig('final_loss_plot.png')
+            plt.close()
         ### --
 
         # adapt student

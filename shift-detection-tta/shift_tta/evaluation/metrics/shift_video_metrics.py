@@ -241,7 +241,7 @@ class SHIFTVideoMetric(CocoVideoMetric):
                     domain_shifts[video_name] = shift_type
 
         # Filter results based on img_name and domain_shift to calculate mAP separately
-        night_start = 180
+        '''night_start = 180
         night_end = 220
         rain_start = 80
         rain_end = 320
@@ -253,7 +253,21 @@ class SHIFTVideoMetric(CocoVideoMetric):
         rain_source_end = 16
         rain_loopback_start = 384
         fog_source_end = 8
-        fog_loopback_start = 392
+        fog_loopback_start = 392'''
+        
+        night_start = 180
+        night_end = 220
+        rain_start = 180
+        rain_end = 220
+        fog_start = 180
+        fog_end = 220
+        
+        night_source_end = 20
+        night_loopback_start = 380
+        rain_source_end = 20
+        rain_loopback_start = 380
+        fog_source_end = 20
+        fog_loopback_start = 380
                
         part1_results = []
         part2_results = []
@@ -285,7 +299,7 @@ class SHIFTVideoMetric(CocoVideoMetric):
                 # Put the image in the correct part
                 if img_name < end_source:
                     part1_results.append(result)
-                elif start_target <= img_name <= end_target:
+                elif start_target < img_name <= end_target:
                     part2_results.append(result)
                 elif img_name >= start_loopback:
                     part3_results.append(result)

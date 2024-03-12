@@ -28,7 +28,8 @@ class YOLOXConsistencyContrastiveLoss(nn.Module):
                  obj_weight=1.0,
                  reg_weight=1.0,
                  cls_weight=1.0,
-                 contrastive=False
+                 contrastive=False,
+                 filter_pseudo_labels=None
         ):
         super(YOLOXConsistencyContrastiveLoss, self).__init__()
         self.weight_consistency_loss = weight_consistency_loss
@@ -37,9 +38,10 @@ class YOLOXConsistencyContrastiveLoss(nn.Module):
         self.reg_weight = reg_weight
         self.cls_weight = cls_weight
         self.contrastive = contrastive
+        self.filter_pseudo_labels = filter_pseudo_labels
         self.supconloss = SupConLoss(contrast_mode='one')
     
-    def forward(self, inputs, targets, features_teacher, features_student, img_width, img_height, **kwargs):
+    def forward(self, inputs, targets, features_teacher, features_student, teacher_preds, student_preds, img_width, img_height, **kwargs):
         """Forward pass.
         Args:
             inputs: Dictionary of classification scores and bounding box
@@ -97,52 +99,109 @@ class YOLOXConsistencyContrastiveLoss(nn.Module):
         loss += self.cls_weight * cls_loss 
         
         # Calculate weighted consistency loss
-        loss = self.weight_consistency_loss * loss
+        consistency_loss = self.weight_consistency_loss * loss
+        
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        contrastive_loss = torch.tensor(0.0).to(device)
         
         ### --Contrastive loss for multi scale features
         if self.contrastive:
-            # Get the predictions
-            teacher_pred = torch.cat([score.reshape(-1, 6) for score in student_cls], dim=0)
-        
-            # Get probabilities
-            teacher_prob = F.softmax(teacher_pred, dim=1)
-        
-            # Get max probabilities
-            teacher_score, _ = torch.max(teacher_prob, dim=1)
-        
-            # Get class labels
-            teacher_label = torch.argmax(teacher_prob, dim=1)
-        
-            # Create a 2D tensor with bboxes coordinates
-            student_reg_boxes = torch.cat([box.reshape(-1, 4) for box in student_reg], dim=0)
-            teacher_reg_boxes = torch.cat([box.reshape(-1, 4) for box in teacher_reg], dim=0)
-
             # Initialize loss to zero
-            contrastive_loss_multi_scale = 0 
+            contrastive_loss_multi_scale = torch.tensor(0.0).to(device)
+ 
+            for i in range(len(features_teacher)): ### len(features_teacher)
+                ### --Keep only the first view
+                '''teacher_obj[i] = teacher_obj[i][0, :, :, :].unsqueeze(0)
+                teacher_reg[i] = teacher_reg[i][0, :, :, :].unsqueeze(0)
+                teacher_cls[i] = teacher_cls[i][0, :, :, :].unsqueeze(0)
+
+                student_obj[i] = student_obj[i][0, :, :, :].unsqueeze(0)
+                student_reg[i] = student_reg[i][0, :, :, :].unsqueeze(0)
+                student_cls[i] = student_cls[i][0, :, :, :].unsqueeze(0)'''
+                
+                features_student = list(features_student)
+                features_student[i] = features_student[i][0, :, :, :].unsqueeze(0)
+                
+                features_teacher = list(features_teacher)
+                features_teacher[i] = features_teacher[i][0, :, :, :].unsqueeze(0)
+                ### --
+
+                '''### H*W predictions
+                H = features_teacher[i].shape[2]
+                W = features_teacher[i].shape[3]
+                teacher_pred1 = []
+                for j in range(H):
+                    for k in range (W):
+                        teacher_pred1.append(teacher_cls[i][:, :, j, k])
+                print("list of tensors:", teacher_pred1[0])'''
+                        
+                '''# Get the predictions
+                teacher_pred = teacher_cls[i].reshape((6, -1)).T
+                #print(teacher_pred[0, :])
         
-            # If there are boxes detected
-            if len(teacher_reg_boxes):
-                for i in range(len(features_teacher)):
+                # Get probabilities
+                teacher_prob = F.softmax(teacher_pred, dim=1)
+        
+                # Get max probabilities
+                teacher_score, _ = torch.max(teacher_prob, dim=1)
+        
+                # Get class labels
+                teacher_label = torch.argmax(teacher_prob, dim=1)
+        
+                # Create a 2D tensor with bboxes coordinates
+                student_reg_boxes = student_reg[i].reshape((4, -1)).T
+                teacher_reg_boxes = teacher_reg[i].reshape((4, -1)).T
+                # print(student_reg_boxes[0,:]) ### First bbox, shape [num, 4] -> in each row a bbox'''
+                
+                # Get bboxes and labels
+                teacher_reg_boxes = teacher_preds[0].bboxes
+                student_reg_boxes = student_preds[0].bboxes
+                teacher_label = teacher_preds[0].labels
+                teacher_score = teacher_preds[0].scores
+                
+                # Filter pseudo labels based on threshold
+                if self.filter_pseudo_labels is not None:
+                    mask = teacher_score >= self.filter_pseudo_labels
+                    student_reg_boxes = student_reg_boxes[mask]
+                    teacher_score = teacher_score[mask]
+                    teacher_label = teacher_label[mask]
+                    teacher_reg_boxes = teacher_reg_boxes[mask]
+                    #print(teacher_reg_boxes.shape)
+                    #print(teacher_score)
+                    #print(teacher_label)
+                    #print(teacher_reg_boxes)
+                    
+                # If there are bboxes detected after filtering
+                if len(teacher_reg_boxes):      
                     # Calculate object level features using ROIAlign
                     object_features_student = locate_feature_roialign(features_student[i], student_reg_boxes, img_width, img_height)
                     object_features_teacher = locate_feature_roialign(features_teacher[i], teacher_reg_boxes, img_width, img_height)
-        
+
                     # Normalize object level features
                     object_features_student = nn.functional.normalize(object_features_student, dim=1)
                     object_features_teacher = nn.functional.normalize(object_features_teacher, dim=1)
-                
+        
                     # Compute contrastive loss
                     object_features_all = torch.stack([object_features_student, object_features_teacher], dim=1)
                     contrastive_loss = self.supconloss(object_features_all, teacher_label) # Use pseudo labels as ground truths for supervision
-                  
+                    #print(f"Contrastive loss not weighted stage {i}: {contrastive_loss}")
+          
                     # Add contrastive loss for each feature scale
-                    contrastive_loss_multi_scale += contrastive_loss 
-        
-            # Calculate weighted contrastive loss
-            loss += contrastive_loss_multi_scale * self.weight_contrastive_loss
+                    contrastive_loss_multi_scale += contrastive_loss
+            #print(len(teacher_reg_boxes))
+            #print(teacher_reg_boxes)
+            #print(student_reg_boxes)
+            
+            contrastive_loss = contrastive_loss_multi_scale * self.weight_contrastive_loss
+            loss = consistency_loss + contrastive_loss
+   
+            '''print("Consistency loss!!!:", consistency_loss)                
+            print("Contrastive loss!!!:", contrastive_loss)
+            print("Final loss!!!:", loss)
+            print()'''
         ### --
         
-        return loss
+        return loss, consistency_loss, contrastive_loss
         
         
 def locate_feature_roialign(feature_map, boxes, image_width, image_height):

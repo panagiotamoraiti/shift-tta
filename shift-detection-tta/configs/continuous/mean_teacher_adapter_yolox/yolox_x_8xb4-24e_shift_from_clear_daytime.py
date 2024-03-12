@@ -48,8 +48,9 @@ model = dict(
         loss=dict(
             type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
             weight_consistency_loss=0.01,
-            weight_contrastive_loss=0.01,
-            contrastive=False
+            weight_contrastive_loss=0.005,
+            contrastive=True,
+            filter_pseudo_labels=0.1
         ),
         stochastic_restoration=False,
         rst_prob=0.01,
