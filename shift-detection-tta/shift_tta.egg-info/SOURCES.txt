@@ -31,7 +31,8 @@ shift_tta/models/detectors/__init__.py
 shift_tta/models/detectors/adaptive_detector.py
 shift_tta/models/detectors/base.py
 shift_tta/models/losses/__init__.py
-shift_tta/models/losses/yolox_consistency_loss.py
+shift_tta/models/losses/supervised_contrastive_loss.py
 shift_tta/models/losses/yolox_consistency_contrastive_loss.py
+shift_tta/models/losses/yolox_consistency_loss.py
 shift_tta/utils/__init__.py
 shift_tta/utils/setup_env.py

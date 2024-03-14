@@ -2,4 +2,6 @@ processed_data/
 shift-detection-tta/data/
 shift-detection-tta/checkpoints/
 shift-detection-tta/work_dirs/
-shift-detection-tta/res_temp/
+shift-detection-tta/results/images
+shift-detection-tta/results/plots
+shift-detection-tta/results/visualize_videos

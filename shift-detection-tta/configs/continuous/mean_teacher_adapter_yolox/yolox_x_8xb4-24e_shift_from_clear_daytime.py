@@ -72,24 +72,42 @@ model = dict(
             dict(type='mmtrack.PackTrackInputs', pack_single_img=True),
         ],
         student_pipeline = [
-            dict(type='mmdet.YOLOXHSVRandomAug'),
+            #dict(type='mmdet.YOLOXHSVRandomAug'),
             #dict(type='mmdet.RandomFlip', prob=0.5, direction='horizontal'), # New augmentation
+            dict(
+                type='mmdet.Albu',
+                    transforms=[
+                        dict(type='ColorJitter', brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.7), # New augmentation
+                    ],),
+            dict(type='mmdet.RandomGrayscale', prob=0.1, keep_channels=True), # New augmentation 
+            dict(
+                type='mmdet.Albu',
+                    transforms=[
+                        dict(type='GaussianBlur', sigma_limit=[0.5, 2.5], p=0.7), # New augmentation
+                    ],),
             #dict(
             #    type='mmdet.Albu',
             #        transforms=[
-            #            dict(type='ColorJitter', brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.8), # New augmentation
-            #        ],),
-            #dict(type='mmdet.RandomGrayscale', prob=0.2, keep_channels=True), # New augmentation 
-            #dict(
-            #    type='mmdet.Albu',
-            #        transforms=[
-            #            dict(type='GaussianBlur', sigma_limit=[0.1, 2.0], p=0.5), # New augmentation
-            #        ],),
-            # dict(
-            #     type='mmdet.Albu',
-            #         transforms=[
-            #             dict(type='Solarize', threshold=128, p=0.2), # New augmentation
-            #         ],),
+            #            dict(type='Solarize', threshold=128, p=0.05), # New augmentation
+            #        ],),        
+            # min_area_ratio: Minimum erased area / input image area
+            # max_area_ratio: Maximum erased area / input image area
+            # aspect_range: Aspect ratio range of erased area
+            dict(   
+                type='mmcv.RandomApply',
+                    transforms=[dict(type='mmpretrain.RandomErasing', aspect_range=(0.95, 1.0), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"),  # New augmentation
+                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.95, 1.0), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"), 
+                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.7, 1.0), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"), 
+                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.7, 1.0), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"), 
+                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.5, 0.8), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"), 
+                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.5, 0.8), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"), 
+                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.2, 0.5), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"),  
+                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.2, 0.5), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"),
+                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.2, 1.0), min_area_ratio=0.001, max_area_ratio=0.003, erase_prob=0.2, mode="rand"),  
+                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.2, 1.0), min_area_ratio=0.001, max_area_ratio=0.003, erase_prob=0.2, mode="rand"),
+                                #dict(type='mmdet.RandomErasing', n_patches=(1, 20), ratio=(0, 0.1), bbox_erased_thr=1.0), # New augmentation
+                               ], prob=0.5
+                ),
             dict(type='mmdet.Resize', scale=img_scale, keep_ratio=True),
             dict(
                 type='mmdet.Pad',

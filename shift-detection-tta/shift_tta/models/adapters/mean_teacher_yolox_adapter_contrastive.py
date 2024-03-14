@@ -3,6 +3,7 @@ from typing import List, Optional, Tuple
 
 import torch
 import matplotlib.pyplot as plt
+import cv2
 from copy import deepcopy
 
 from mmengine.dataset import Compose
@@ -193,6 +194,32 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             print("Contrastive loss:", contrastive_loss)
             print("Final loss:", loss)
             print()
+            
+            ### -- Save augmented image of the student
+            for i in range(len(student_imgs)):
+                student_img = student_imgs[i].permute(1, 2, 0).cpu().numpy()
+                student_img = cv2.cvtColor(student_img, cv2.COLOR_BGR2RGB)
+                teacher_img_vis = teacher_img[0].permute(1, 2, 0).cpu().numpy()
+                teacher_img_vis = cv2.cvtColor(teacher_img_vis, cv2.COLOR_BGR2RGB)
+
+                # Normalize pixel values to [0, 1]
+                student_img = student_img - student_img.min()
+                student_img = student_img / student_img.max()
+                teacher_img_vis = teacher_img_vis - teacher_img_vis.min()
+                teacher_img_vis = teacher_img_vis / teacher_img_vis.max()
+                
+                plt.subplot(1, 2, 1)
+                plt.imshow(teacher_img_vis)
+                plt.title("Teacher Image")
+                plt.axis('off')
+                plt.subplot(1, 2, 2)
+                plt.imshow(student_img)
+                plt.title(f"Student Augmented View {i}")
+                plt.axis('off')
+                plt.tight_layout()
+                plt.savefig(f'results/images/{self.s//5}_img_view{i}.png')
+                plt.close()
+            ### --
 
         epochs = 2400 # Number of images
         if self.s == epochs*self.optim_steps:
@@ -206,7 +233,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             plt.legend()
             plt.grid(True)
             plt.tight_layout()
-            plt.savefig('consistency_loss_plot.png')
+            plt.savefig('results/plots/consistency_loss_plot.png')
             plt.close()
 
             # Plot Contrastive Loss
@@ -218,7 +245,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             plt.legend()
             plt.grid(True)
             plt.tight_layout()
-            plt.savefig('contrastive_loss_plot.png')
+            plt.savefig('results/plots/contrastive_loss_plot.png')
             plt.close()
 
             # Plot Final Loss
@@ -230,7 +257,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             plt.legend()
             plt.grid(True)
             plt.tight_layout()
-            plt.savefig('final_loss_plot.png')
+            plt.savefig('results/plots/final_loss_plot.png')
             plt.close()
         ### --
 
