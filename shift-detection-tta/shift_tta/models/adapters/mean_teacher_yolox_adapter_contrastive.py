@@ -4,12 +4,14 @@ from typing import List, Optional, Tuple
 import torch
 import matplotlib.pyplot as plt
 import cv2
+import numpy as np
 from copy import deepcopy
 
 from mmengine.dataset import Compose
 from mmengine.optim import build_optim_wrapper
 from mmengine.structures import InstanceData
 from mmtrack.structures import TrackDataSample
+from mmcv.ops import soft_nms
 
 from shift_tta.registry import MODELS
 from .base_adapter import BaseAdapter
@@ -30,10 +32,12 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
 
     def __init__(self,
                  teacher: Optional[dict] = None,
+                 fixed_source_model: bool = False,
                  stochastic_restoration: bool = False,
                  rst_prob: float = 0.01,
                  optim_wrapper: Optional[dict] = None,
                  optim_steps: int = 0,
+                 filter_pseudo_labels=None,
                  loss: Optional[dict] = dict(
                      type='ROIConsistencyLoss',
                      weight_consistency_loss = 0.01,
@@ -51,7 +55,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         self.teacher = None
         if teacher is not None:
             self.teacher_cfg = teacher
-        
+
         # build optimizer
         self.optim_wrapper = None
         if optim_wrapper is not None:
@@ -68,6 +72,8 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         self.views = views
         self.stochastic_restoration = stochastic_restoration
         self.rst_prob = rst_prob
+        self.filter_pseudo_labels = filter_pseudo_labels
+        self.fixed_source_model = fixed_source_model
         
         # Initialize lists to track losses
         self.consistency_losses = []
@@ -93,7 +99,12 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             self.teacher_cfg['model'] = model
             self.teacher = MODELS.build(self.teacher_cfg)
             self.teacher_model_state = deepcopy(self.teacher.state_dict())
-
+            
+        # Create a fixed source model
+        if self.fixed_source_model:
+            # Create a deep copy of the model for restoration
+            self.fixed_model = deepcopy(model)
+ 
 
     def _reset_optimizer(self) -> None:
         """Reset optimizer state.
@@ -131,7 +142,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         cfg_orig = deepcopy(detector.bbox_head.test_cfg)
         cfg_orig['score_thr'] = 0
         orig_predictions = detector.bbox_head.predict_by_feat(
-            *outs, batch_img_metas=batch_img_metas, with_nms=False, rescale=rescale, cfg=cfg_orig) ### Without NMS and without filtering
+            *outs, batch_img_metas=batch_img_metas, with_nms=True, rescale=False, cfg=cfg_orig) ### Without filtering
             
         det_results = detector.add_pred_to_datasample(
             batch_data_samples, predictions)
@@ -171,8 +182,9 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         outs = dict(
             cls_score=outs[0],
             bbox_pred=outs[1],
-            objectness=outs[2])       
+            objectness=outs[2])    
             
+  
         '''print(len(teacher_orig_predictions[0].bboxes))
         print(len(student_orig_predictions[0].bboxes))
         print()
@@ -195,30 +207,55 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             print("Final loss:", loss)
             print()
             
-            ### -- Save augmented image of the student
+            ### -- Save augmented image of the student with bboxes
+            '''teacher_img_vis = teacher_img[0].permute(1, 2, 0).cpu().numpy()
+            teacher_img_vis = cv2.cvtColor(teacher_img_vis, cv2.COLOR_BGR2RGB)
+            teacher_reg_boxes = teacher_orig_predictions[0].bboxes
+            teacher_score = teacher_orig_predictions[0].scores
+            teacher_label = teacher_orig_predictions[0].labels
+            class_names = ["Pedestrian", "Car", "Truck", "Bus", "Motorcycle", "Bicycle"]
+            
+            # Filter pseudo labels based on threshold
+            if self.filter_pseudo_labels  is not None:
+                mask = teacher_score >= self.filter_pseudo_labels 
+                teacher_score = teacher_score[mask]
+                teacher_label = teacher_label[mask]
+                teacher_reg_boxes = teacher_reg_boxes[mask]
+                
             for i in range(len(student_imgs)):
                 student_img = student_imgs[i].permute(1, 2, 0).cpu().numpy()
-                student_img = cv2.cvtColor(student_img, cv2.COLOR_BGR2RGB)
-                teacher_img_vis = teacher_img[0].permute(1, 2, 0).cpu().numpy()
-                teacher_img_vis = cv2.cvtColor(teacher_img_vis, cv2.COLOR_BGR2RGB)
+                student_img = cv2.cvtColor(student_img, cv2.COLOR_BGR2RGB)   
+                #print(student_img.shape[0]) # 608
+                #print(student_img.shape[1]) # 960
+   
+                for box, label, score in zip(teacher_reg_boxes, teacher_label, teacher_score):
+                    xmin, ymin, xmax, ymax = map(int, box)
+                    cv2.rectangle(teacher_img_vis, (xmin, ymin), (xmax, ymax), (255, 0, 0), 1)
+                    cv2.rectangle(student_img, (xmin-5, ymin-3), (xmax-5, ymax-3), (255, 0, 0), 1)  
+        
+                    # Add label and score
+                    label_text = f"{class_names[label]} {score:.2f}"
+                    (label_width, label_height), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                    cv2.rectangle(teacher_img_vis, (xmin, ymin - label_height - 8), (xmin + label_width, ymin - 2), (255, 255, 255), -1)
+                    cv2.putText(teacher_img_vis, label_text, (xmin, ymin - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2, cv2.LINE_AA)
 
-                # Normalize pixel values to [0, 1]
-                student_img = student_img - student_img.min()
-                student_img = student_img / student_img.max()
-                teacher_img_vis = teacher_img_vis - teacher_img_vis.min()
-                teacher_img_vis = teacher_img_vis / teacher_img_vis.max()
+                # Remove normalization for visualization
+                student_img = student_img.clip(0, 255).astype(np.uint8)
+                teacher_img_vis = teacher_img_vis.clip(0, 255).astype(np.uint8)
                 
-                plt.subplot(1, 2, 1)
+                plt.subplot(1, 2, 1) 
                 plt.imshow(teacher_img_vis)
                 plt.title("Teacher Image")
                 plt.axis('off')
+                
                 plt.subplot(1, 2, 2)
                 plt.imshow(student_img)
                 plt.title(f"Student Augmented View {i}")
                 plt.axis('off')
+                
                 plt.tight_layout()
-                plt.savefig(f'results/images/{self.s//5}_img_view{i}.png')
-                plt.close()
+                plt.savefig(f'results/images/{self.s//5}_img_view{i}.png', dpi=500)
+                plt.close() '''
             ### --
 
         epochs = 2400 # Number of images
@@ -265,6 +302,56 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         loss.backward()
         self.optim_wrapper.step()
         self.optim_wrapper.zero_grad()
+        
+        if self.fixed_source_model:
+            # Fixed source model Forward
+            _, _, _, fixed_model_predictions, _ = self._detect_forward(
+                self.fixed_model.detector, teacher_img, teacher_data_samples)
+                
+            teacher_reg_boxes = teacher_predictions[0].bboxes
+            teacher_score = teacher_predictions[0].scores
+            teacher_labels = teacher_predictions[0].labels
+            fixed_model_reg_boxes = fixed_model_predictions[0].bboxes
+            fixed_model_score = fixed_model_predictions[0].scores
+            fixed_model_labels = fixed_model_predictions[0].labels
+            
+            boxes = torch.cat((teacher_reg_boxes, fixed_model_reg_boxes), dim=0)
+            scores = torch.cat((teacher_score, fixed_model_score), dim=0)
+            labels = torch.cat((teacher_labels, fixed_model_labels), dim=0)
+            
+            # Apply Soft-NMS
+            soft_nms_preds, index = soft_nms(
+                boxes=boxes, # (N, 4)
+                scores=scores, # (N,)
+                iou_threshold=0.7,
+                sigma=0.5,
+                min_score=0.01,
+                method='gaussian'
+            )
+            
+            boxes = soft_nms_preds # (N, 4)
+            scores = scores[index]
+            labels = labels[index]
+            
+            print(soft_nms_preds)
+            print(index)
+            print(len(labels))
+            
+            print(fixed_model_predictions)
+            
+            # Convert detections to a list of InstanceData
+            results_list_soft_nms = []
+            for i in range(len(scores)):
+                instance_data = InstanceData()
+                instance_data.scores = scores[i].item()
+                instance_data.labels = labels[i].item()
+                instance_data.bboxes = soft_nms_preds[i].tolist()
+                results_list_soft_nms.append(instance_data)
+            
+            # Detection results contain the detections after soft-nms from the teacher and the fixed source model
+            det_results = self.fixed_model.detector.add_pred_to_datasample(
+                teacher_data_samples, results_list_soft_nms)
+            
 
         return teacher_det_results
 

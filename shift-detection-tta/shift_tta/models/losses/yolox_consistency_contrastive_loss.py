@@ -108,63 +108,71 @@ class YOLOXConsistencyContrastiveLoss(nn.Module):
         if self.contrastive:
             # Initialize loss to zero
             contrastive_loss_multi_scale = torch.tensor(0.0).to(device)
+            
+            # Get pseudo labels
+            teacher_reg_boxes = teacher_preds[0].bboxes
+            teacher_label = teacher_preds[0].labels
+            teacher_score = teacher_preds[0].scores
+            # print(teacher_reg_boxes) # [k, 4]
+            
+            # Filter pseudo labels based on threshold
+            if self.filter_pseudo_labels is not None:
+                mask = teacher_score >= self.filter_pseudo_labels
+                teacher_score = teacher_score[mask]
+                teacher_label = teacher_label[mask]
+                teacher_reg_boxes = teacher_reg_boxes[mask]
+            # print("Number of bboxes", teacher_reg_boxes.shape[0])
  
             views = teacher_reg[0].shape[0] # Batch size is the number of views
-            
-            for v in range(views):
-                for i in range(len(features_teacher)):
-                    features_student_v = list(features_student)
-                    features_student_v[i] = features_student_v[i][v, :, :, :].unsqueeze(0)
-                    
-                    features_teacher = list(features_teacher)
-                    features_teacher[i] = features_teacher[i][0, :, :, :].unsqueeze(0)
-                    
-                    # Get bboxes and labels
-                    teacher_reg_boxes = teacher_preds[0].bboxes
-                    student_reg_boxes = student_preds[v].bboxes
-                    teacher_label = teacher_preds[0].labels
-                    teacher_score = teacher_preds[0].scores
-                    
-                    # Filter pseudo labels based on threshold
-                    if self.filter_pseudo_labels is not None:
-                        mask = teacher_score >= self.filter_pseudo_labels
-                        student_reg_boxes = student_reg_boxes[mask]
-                        teacher_score = teacher_score[mask]
-                        teacher_label = teacher_label[mask]
-                        teacher_reg_boxes = teacher_reg_boxes[mask]
-                        #print(teacher_reg_boxes.shape)
-                        #print(teacher_score)
-                        #print(teacher_label)
-                        #print(teacher_reg_boxes)
+            for i in range(len(features_teacher)): # For each feature scale calculate loss    
+                # Get feature-maps, one for teacher and v for student
+                features_teacher = list(features_teacher)
+                features_teacher[i] = features_teacher[i][0, :, :, :].unsqueeze(0) # Teacher's features for each scale
+                object_features_all = []
+                
+                # If there are bboxes detected after filtering
+                if len(teacher_reg_boxes):      
+                    # Calculate object level features using ROIAlign
+                    object_features_teacher = locate_feature_roialign(features_teacher[i], teacher_reg_boxes, img_width, img_height)
+                    # Normalize object level features
+                    object_features_teacher = nn.functional.normalize(object_features_teacher, dim=1)
+                    object_features_all.append(object_features_teacher) # Append object features of the teacher
                         
+                features_student_v = list(features_student)
+                features_student_all = []
+                  
+                for v in range(views): # For each view get the student's feature-maps
+                    feature_student_v = features_student_v[i][v, :, :, :].unsqueeze(0)
+                    features_student_all.append(feature_student_v) # Append student's features for each view
+                            
                     # If there are bboxes detected after filtering
                     if len(teacher_reg_boxes):      
                         # Calculate object level features using ROIAlign
-                        object_features_student = locate_feature_roialign(features_student[i], student_reg_boxes, img_width, img_height)
-                        object_features_teacher = locate_feature_roialign(features_teacher[i], teacher_reg_boxes, img_width, img_height)
-
+                        object_features_student = locate_feature_roialign(features_student_all[v], teacher_reg_boxes, img_width, img_height)           
                         # Normalize object level features
-                        object_features_student = nn.functional.normalize(object_features_student, dim=1)
-                        object_features_teacher = nn.functional.normalize(object_features_teacher, dim=1)
+                        object_features_student = nn.functional.normalize(object_features_student, dim=1)     
+                        object_features_all.append(object_features_student) # Append object features of the student
             
-                        # Compute contrastive loss
-                        object_features_all = torch.stack([object_features_student, object_features_teacher], dim=1)
-                        contrastive_loss = self.supconloss(object_features_all, teacher_label) # Use pseudo labels as ground truths for supervision
-                        #print(f"Contrastive loss not weighted stage {i}: {contrastive_loss}")
-              
-                        # Add contrastive loss for each feature scale
-                        contrastive_loss_multi_scale += contrastive_loss
-                #print(len(teacher_reg_boxes))
-                #print(teacher_reg_boxes)
-                #print(student_reg_boxes)
+                if len(teacher_reg_boxes):    
+                    # Compute contrastive loss
+                    object_features_all_tensor = torch.stack(object_features_all, dim=1)
+                    # print(object_features_all_tensor.shape)
+                    # print()
+                    contrastive_loss = self.supconloss(object_features_all_tensor, teacher_label) # Use pseudo labels as ground truths for supervision
+                    # print(f"Contrastive loss not weighted stage {i}: {contrastive_loss}")
+                    # Add contrastive loss for each feature scale
+                    contrastive_loss_multi_scale += contrastive_loss
+
             
             contrastive_loss = contrastive_loss_multi_scale * self.weight_contrastive_loss
-            loss = consistency_loss + contrastive_loss
-   
-            '''print("Consistency loss!!!:", consistency_loss)                
-            print("Contrastive loss!!!:", contrastive_loss)
-            print("Final loss!!!:", loss)
-            print()'''
+            
+        # Final loss
+        loss = consistency_loss + contrastive_loss
+
+        '''print("Consistency loss!!!:", consistency_loss)                
+        print("Contrastive loss!!!:", contrastive_loss)
+        print("Final loss!!!:", loss)
+        print()'''
         ### --
         
         return loss, consistency_loss, contrastive_loss

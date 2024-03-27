@@ -8,7 +8,8 @@ dataset_type = 'SHIFTDataset'
 data_root = 'data/shift/'
 attributes = dict(weather_coarse='clear', timeofday_coarse='daytime')
 
-img_scale = (800*0.75, 1440*0.75) ### * 0.75
+
+img_scale = (800*0.75, 1440*0.75) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
 batch_size = 1 ### 2
 
 model = dict(
@@ -45,15 +46,17 @@ model = dict(
             type='ExponentialMovingAverage',
             momentum=0.0002, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight
             update_buffers=True),
+        filter_pseudo_labels=0.7,
         loss=dict(
             type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
-            weight_consistency_loss=0.01,
+            weight_consistency_loss=0.005,
             weight_contrastive_loss=0.005,
             contrastive=True,
-            filter_pseudo_labels=0.1
+            filter_pseudo_labels=0.7
         ),
-        stochastic_restoration=False,
+        stochastic_restoration=True,
         rst_prob=0.01,
+        fixed_source_model=False,
         pipeline = [
             dict(type='LoadImageFromFile',
                 backend_args=dict(
@@ -77,36 +80,29 @@ model = dict(
             dict(
                 type='mmdet.Albu',
                     transforms=[
-                        dict(type='ColorJitter', brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.7), # New augmentation
+                        dict(type='ColorJitter', brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.8), # New augmentation
                     ],),
-            dict(type='mmdet.RandomGrayscale', prob=0.1, keep_channels=True), # New augmentation 
+            dict(type='mmdet.RandomGrayscale', prob=0.2, keep_channels=True), # New augmentation 
             dict(
                 type='mmdet.Albu',
                     transforms=[
-                        dict(type='GaussianBlur', sigma_limit=[0.5, 2.5], p=0.7), # New augmentation
+                        dict(type='GaussianBlur', sigma_limit=[0.1, 2.0], p=0.5), # New augmentation
                     ],),
-            #dict(
-            #    type='mmdet.Albu',
-            #        transforms=[
-            #            dict(type='Solarize', threshold=128, p=0.05), # New augmentation
-            #        ],),        
+            dict(
+                type='mmdet.Albu',
+                    transforms=[
+                        dict(type='Solarize', threshold=128, p=0.025), # New augmentation
+                    ],),        
             # min_area_ratio: Minimum erased area / input image area
             # max_area_ratio: Maximum erased area / input image area
             # aspect_range: Aspect ratio range of erased area
             dict(   
                 type='mmcv.RandomApply',
-                    transforms=[dict(type='mmpretrain.RandomErasing', aspect_range=(0.95, 1.0), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"),  # New augmentation
-                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.95, 1.0), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"), 
-                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.7, 1.0), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"), 
-                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.7, 1.0), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"), 
-                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.5, 0.8), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"), 
-                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.5, 0.8), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"), 
-                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.2, 0.5), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"),  
-                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.2, 0.5), min_area_ratio=0.0005, max_area_ratio=0.003, erase_prob=0.7, mode="rand"),
-                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.2, 1.0), min_area_ratio=0.001, max_area_ratio=0.003, erase_prob=0.2, mode="rand"),  
-                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.2, 1.0), min_area_ratio=0.001, max_area_ratio=0.003, erase_prob=0.2, mode="rand"),
+                    transforms=[dict(type='mmpretrain.RandomErasing', aspect_range=(0.3, 3.3), min_area_ratio=0.001, max_area_ratio=0.005, erase_prob=1.0, mode="rand"), # New augmentation
+                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.1, 6.0), min_area_ratio=0.001, max_area_ratio=0.005, erase_prob=1.0, mode="rand"), 
+                                dict(type='mmpretrain.RandomErasing', aspect_range=(0.05, 8.0), min_area_ratio=0.001, max_area_ratio=0.005, erase_prob=1.0, mode="rand"), 
                                 #dict(type='mmdet.RandomErasing', n_patches=(1, 20), ratio=(0, 0.1), bbox_erased_thr=1.0), # New augmentation
-                               ], prob=0.5
+                               ], prob=0.7
                 ),
             dict(type='mmdet.Resize', scale=img_scale, keep_ratio=True),
             dict(
