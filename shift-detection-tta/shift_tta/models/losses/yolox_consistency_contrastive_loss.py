@@ -7,6 +7,8 @@ from shift_tta.registry import MODELS
 from .supervised_contrastive_loss import SupConLoss
 from torchvision.ops import roi_align
 
+from torch.nn.functional import smooth_l1_loss
+
 
 @MODELS.register_module()
 class YOLOXConsistencyContrastiveLoss(nn.Module):
@@ -28,8 +30,7 @@ class YOLOXConsistencyContrastiveLoss(nn.Module):
                  obj_weight=1.0,
                  reg_weight=1.0,
                  cls_weight=1.0,
-                 contrastive=False,
-                 filter_pseudo_labels=None
+                 contrastive=False
         ):
         super(YOLOXConsistencyContrastiveLoss, self).__init__()
         self.weight_consistency_loss = weight_consistency_loss
@@ -38,10 +39,9 @@ class YOLOXConsistencyContrastiveLoss(nn.Module):
         self.reg_weight = reg_weight
         self.cls_weight = cls_weight
         self.contrastive = contrastive
-        self.filter_pseudo_labels = filter_pseudo_labels
         self.supconloss = SupConLoss(contrast_mode='one')
     
-    def forward(self, inputs, targets, features_teacher, features_student, teacher_preds, student_preds, img_width, img_height, **kwargs):
+    def forward(self, inputs, targets, features_teacher, features_student, teacher_preds, img_width, img_height, **kwargs):
         """Forward pass.
         Args:
             inputs: Dictionary of classification scores and bounding box
@@ -114,14 +114,6 @@ class YOLOXConsistencyContrastiveLoss(nn.Module):
             teacher_label = teacher_preds[0].labels
             teacher_score = teacher_preds[0].scores
             # print(teacher_reg_boxes) # [k, 4]
-            
-            # Filter pseudo labels based on threshold
-            if self.filter_pseudo_labels is not None:
-                mask = teacher_score >= self.filter_pseudo_labels
-                teacher_score = teacher_score[mask]
-                teacher_label = teacher_label[mask]
-                teacher_reg_boxes = teacher_reg_boxes[mask]
-            # print("Number of bboxes", teacher_reg_boxes.shape[0])
  
             views = teacher_reg[0].shape[0] # Batch size is the number of views
             for i in range(len(features_teacher)): # For each feature scale calculate loss    

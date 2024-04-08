@@ -7,6 +7,7 @@ declare -a CFG_OPTIONS=(
 )
 
 # python -m debugpy --listen $HOSTNAME:5678 --wait-for-client tools/test.py \
+export CUBLAS_WORKSPACE_CONFIG=:4096:8
 python tools/test.py \
      ${CONFIG} \
      --checkpoint ${CKPT} \

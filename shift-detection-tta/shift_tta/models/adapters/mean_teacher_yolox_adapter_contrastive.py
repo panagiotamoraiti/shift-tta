@@ -11,7 +11,7 @@ from mmengine.dataset import Compose
 from mmengine.optim import build_optim_wrapper
 from mmengine.structures import InstanceData
 from mmtrack.structures import TrackDataSample
-from mmcv.ops import soft_nms
+from mmcv.ops import soft_nms, nms
 
 from shift_tta.registry import MODELS
 from .base_adapter import BaseAdapter
@@ -37,7 +37,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
                  rst_prob: float = 0.01,
                  optim_wrapper: Optional[dict] = None,
                  optim_steps: int = 0,
-                 filter_pseudo_labels=None,
+                 filter_pseudo_labels: int = 0,
                  loss: Optional[dict] = dict(
                      type='ROIConsistencyLoss',
                      weight_consistency_loss = 0.01,
@@ -50,7 +50,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
                  student_pipeline: Optional[list[dict]] = None,
                  views: int = 1,
                  **kwargs) -> None:
-        super().__init__(**kwargs)
+        super().__init__(**kwargs)  
 
         self.teacher = None
         if teacher is not None:
@@ -127,7 +127,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
                 self.teacher_model_state, strict=True)
 
     def _detect_forward(self, detector: torch.nn.Module, img: torch.Tensor, 
-                 batch_data_samples: TrackDataSample, rescale: bool = True):
+                 batch_data_samples: TrackDataSample, rescale: bool = True, fixed: bool = False):
         """Detector forward pass."""
         feats = detector.extract_feat(img)
         outs = detector.bbox_head.forward(feats)
@@ -135,14 +135,24 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         batch_img_metas = [
             data_samples.metainfo for data_samples in batch_data_samples
         ]
-        predictions = detector.bbox_head.predict_by_feat(
-            *outs, batch_img_metas=batch_img_metas, rescale=rescale)
+           
+        if fixed:
+            cfg_fixed = deepcopy(detector.bbox_head.test_cfg)
+            cfg_fixed['score_thr'] = 0.05
+            predictions = detector.bbox_head.predict_by_feat(
+            *outs, batch_img_metas=batch_img_metas, rescale=rescale, cfg=cfg_fixed)
+        else:
+            predictions = detector.bbox_head.predict_by_feat(
+                *outs, batch_img_metas=batch_img_metas, rescale=rescale)
+                
+        '''predictions = detector.bbox_head.predict_by_feat(
+                *outs, batch_img_metas=batch_img_metas, rescale=rescale)'''
             
-        ### Define new config object with score_thr = 0
+        ### Define new config object with score_thr
         cfg_orig = deepcopy(detector.bbox_head.test_cfg)
-        cfg_orig['score_thr'] = 0
+        cfg_orig['score_thr'] = self.filter_pseudo_labels
         orig_predictions = detector.bbox_head.predict_by_feat(
-            *outs, batch_img_metas=batch_img_metas, with_nms=True, rescale=False, cfg=cfg_orig) ### Without filtering
+            *outs, batch_img_metas=batch_img_metas, with_nms=True, rescale=False, cfg=cfg_orig) ### With other filtering threshold
             
         det_results = detector.add_pred_to_datasample(
             batch_data_samples, predictions)
@@ -177,7 +187,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             objectness=teacher_outs[2])
 
         # student forward ### -> model is the student
-        _, outs, student_feats, student_predictions, student_orig_predictions = self._detect_forward(
+        _, outs, student_feats, student_predictions, _ = self._detect_forward(
             model.detector, student_imgs, student_data_samples)
         outs = dict(
             cls_score=outs[0],
@@ -193,7 +203,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         print()'''
             
         ### --Consistency-Contrastive loss (includes multi-scale features)
-        loss, consistency_loss, contrastive_loss = self.loss(outs, teacher_outs, teacher_feats, student_feats, teacher_orig_predictions, student_orig_predictions, img_width, img_height)
+        loss, consistency_loss, contrastive_loss = self.loss(outs, teacher_outs, teacher_feats, student_feats, teacher_orig_predictions, img_width, img_height)
         
         self.s +=1
         if self.s % self.optim_steps == 0:
@@ -214,13 +224,6 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             teacher_score = teacher_orig_predictions[0].scores
             teacher_label = teacher_orig_predictions[0].labels
             class_names = ["Pedestrian", "Car", "Truck", "Bus", "Motorcycle", "Bicycle"]
-            
-            # Filter pseudo labels based on threshold
-            if self.filter_pseudo_labels  is not None:
-                mask = teacher_score >= self.filter_pseudo_labels 
-                teacher_score = teacher_score[mask]
-                teacher_label = teacher_label[mask]
-                teacher_reg_boxes = teacher_reg_boxes[mask]
                 
             for i in range(len(student_imgs)):
                 student_img = student_imgs[i].permute(1, 2, 0).cpu().numpy()
@@ -303,10 +306,11 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         self.optim_wrapper.step()
         self.optim_wrapper.zero_grad()
         
+        ### --Apply soft NMS
         if self.fixed_source_model:
             # Fixed source model Forward
             _, _, _, fixed_model_predictions, _ = self._detect_forward(
-                self.fixed_model.detector, teacher_img, teacher_data_samples)
+                self.fixed_model.detector, teacher_img, teacher_data_samples, fixed=True) # apply a bigger threshold to predictions of source model
                 
             teacher_reg_boxes = teacher_predictions[0].bboxes
             teacher_score = teacher_predictions[0].scores
@@ -318,40 +322,39 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             boxes = torch.cat((teacher_reg_boxes, fixed_model_reg_boxes), dim=0)
             scores = torch.cat((teacher_score, fixed_model_score), dim=0)
             labels = torch.cat((teacher_labels, fixed_model_labels), dim=0)
-            
-            # Apply Soft-NMS
-            soft_nms_preds, index = soft_nms(
+
+            '''# Apply Soft-NMS (N, 5) returns 
+            soft_nms_preds, soft_nms_index = soft_nms(
                 boxes=boxes, # (N, 4)
                 scores=scores, # (N,)
-                iou_threshold=0.7,
-                sigma=0.5,
+                iou_threshold=0.5,
                 min_score=0.01,
-                method='gaussian'
-            )
+                method='linear'
+            )'''
             
-            boxes = soft_nms_preds # (N, 4)
-            scores = scores[index]
-            labels = labels[index]
-            
-            print(soft_nms_preds)
-            print(index)
-            print(len(labels))
-            
-            print(fixed_model_predictions)
+            '''boxes = soft_nms_preds[:, :4]
+            scores = scores[soft_nms_index]'''
+ 
+            nms_preds, nms_index = nms(boxes=boxes,
+                scores=scores,
+                iou_threshold=0.7,
+                score_threshold = 0.01)
             
             # Convert detections to a list of InstanceData
-            results_list_soft_nms = []
-            for i in range(len(scores)):
-                instance_data = InstanceData()
-                instance_data.scores = scores[i].item()
-                instance_data.labels = labels[i].item()
-                instance_data.bboxes = soft_nms_preds[i].tolist()
-                results_list_soft_nms.append(instance_data)
-            
+            results_list = []
+            instance_data = InstanceData()
+            instance_data.labels = labels[nms_index] 
+            instance_data.bboxes = nms_preds[:, :4] # (N, 4)
+            instance_data.scores = scores[nms_index]
+            results_list.append(instance_data)
+    
+       
             # Detection results contain the detections after soft-nms from the teacher and the fixed source model
             det_results = self.fixed_model.detector.add_pred_to_datasample(
-                teacher_data_samples, results_list_soft_nms)
-            
+                teacher_data_samples, results_list)
+                
+            # Return the results after soft-NMS
+            return det_results
 
         return teacher_det_results
 
@@ -376,10 +379,15 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             Each InstanceData usually contains ``bboxes``, ``labels``,
             ``scores`` and ``instances_id``.
         """
+
         metainfo = data_sample.metainfo
         frame_id = metainfo.get('frame_id', -1)
         if self.with_episodic and frame_id == 0: ### At the beginning of each video reset to source model
             self.reset(model)
+            # print(model.detector)
+        else:
+            if self.source_model_state is None:
+                self._init_source_model_state(model)
 
         # adapt model
         # TODO: apply multiple image transforms
@@ -416,14 +424,14 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
                     teacher_data_samples, student_data_samples) ### Update Student
                 self.teacher.update_parameters(model) ### Update Teacher
                 
-                ### --Stochastically restore student's weights
-                if self.stochastic_restoration: 
-                    for nm, m  in model.named_modules():
-                        for npp, p in m.named_parameters():
-                            if npp in ['weight', 'bias'] and p.requires_grad:
-                                mask = (torch.rand(p.shape) < self.rst_prob).float().cuda() # For values < rst_thresh put 1, restore this weight
-                                with torch.no_grad():
-                                    p.data = self.source_model_state[f"{nm}.{npp}"] * mask + p * (1.0-mask) ### Restore weights using saved initial_model_state
+            ### --Stochastically restore student's weights
+            if self.stochastic_restoration: 
+                for nm, m  in model.named_modules():
+                    for npp, p in m.named_parameters():
+                        if npp in ['weight', 'bias'] and p.requires_grad:
+                            mask = (torch.rand(p.shape) < self.rst_prob).float().cuda() # For values < rst_thresh put 1, restore this weight
+                            with torch.no_grad():
+                                p.data = self.source_model_state[f"{nm}.{npp}"] * mask + p * (1.0-mask) ### Restore weights using saved initial_model_state
                 ### --
 
         self._reset_optimizer()

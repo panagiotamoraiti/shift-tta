@@ -8,8 +8,8 @@ dataset_type = 'SHIFTDataset'
 data_root = 'data/shift/'
 attributes = dict(weather_coarse='clear', timeofday_coarse='daytime')
 
-
-img_scale = (800*0.75, 1440*0.75) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
+ratio = 0.75
+img_scale = (800*ratio, 1440*ratio) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
 batch_size = 1 ### 2
 
 model = dict(
@@ -40,6 +40,8 @@ model = dict(
             type='OptimWrapper',
             optimizer=dict(
                 type='SGD', lr=0.00025, momentum=0.9, weight_decay=5e-4, nesterov=True),
+                #type='Adam', lr=0.00025, betas=(0.9, 0.999), eps=1e-8, weight_decay=5e-4, amsgrad=False),
+                #type='Adam', lr=0.00025, weight_decay=5e-4),
             paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.)),
         optim_steps=5,
         teacher=dict(
@@ -50,12 +52,11 @@ model = dict(
         loss=dict(
             type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
             weight_consistency_loss=0.005,
-            weight_contrastive_loss=0.005,
+            weight_contrastive_loss=0.003,
             contrastive=True,
-            filter_pseudo_labels=0.7
         ),
         stochastic_restoration=True,
-        rst_prob=0.01,
+        rst_prob=0.05,
         fixed_source_model=False,
         pipeline = [
             dict(type='LoadImageFromFile',
@@ -101,6 +102,9 @@ model = dict(
                     transforms=[dict(type='mmpretrain.RandomErasing', aspect_range=(0.3, 3.3), min_area_ratio=0.001, max_area_ratio=0.005, erase_prob=1.0, mode="rand"), # New augmentation
                                 dict(type='mmpretrain.RandomErasing', aspect_range=(0.1, 6.0), min_area_ratio=0.001, max_area_ratio=0.005, erase_prob=1.0, mode="rand"), 
                                 dict(type='mmpretrain.RandomErasing', aspect_range=(0.05, 8.0), min_area_ratio=0.001, max_area_ratio=0.005, erase_prob=1.0, mode="rand"), 
+                                #dict(type='mmpretrain.RandomErasing', aspect_range=(0.05, 8.0), min_area_ratio=0.0005, max_area_ratio=0.0025, erase_prob=1.0, mode="rand"), 
+                                #dict(type='mmpretrain.RandomErasing', aspect_range=(0.05, 8.0), min_area_ratio=0.0005, max_area_ratio=0.0025, erase_prob=1.0, mode="rand"), 
+                                #dict(type='mmpretrain.RandomErasing', aspect_range=(0.05, 8.0), min_area_ratio=0.0005, max_area_ratio=0.001, erase_prob=1.0, mode="rand"),
                                 #dict(type='mmdet.RandomErasing', n_patches=(1, 20), ratio=(0, 0.1), bbox_erased_thr=1.0), # New augmentation
                                ], prob=0.7
                 ),
@@ -221,6 +225,7 @@ optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
         type='SGD', lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True),
+        #type='Adam', lr=lr, weight_decay=5e-4),
     paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.))
 
 # some hyper parameters
@@ -277,6 +282,9 @@ custom_hooks = [
         priority=49)
 ]
 default_hooks = dict(checkpoint=dict(interval=1))
+
+seed = 1234
+randomness = dict(seed=seed, deterministic=True)
 
 # evaluator
 val_evaluator = [

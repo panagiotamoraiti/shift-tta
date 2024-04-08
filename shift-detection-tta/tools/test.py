@@ -10,6 +10,10 @@ from mmengine.runner import Runner
 
 from shift_tta.utils import register_all_modules
 
+import torch
+import numpy as np
+import random
+
 
 # TODO: support fuse_conv_bn, visualization, and format_only
 def parse_args():
@@ -44,6 +48,15 @@ def parse_args():
 
 def main():
     args = parse_args()
+    
+    ### Set seed for reproducability
+    seed = 1234
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     # register all modules in shift-tta into the registries
     # do not init the default scope here because it will be init in the runner
