@@ -218,14 +218,15 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             print()
             
             ### -- Save augmented image of the student with bboxes
-            '''teacher_img_vis = teacher_img[0].permute(1, 2, 0).cpu().numpy()
+            teacher_img_vis = teacher_img[0].permute(1, 2, 0).cpu().numpy()
             teacher_img_vis = cv2.cvtColor(teacher_img_vis, cv2.COLOR_BGR2RGB)
             teacher_reg_boxes = teacher_orig_predictions[0].bboxes
             teacher_score = teacher_orig_predictions[0].scores
             teacher_label = teacher_orig_predictions[0].labels
-            class_names = ["Pedestrian", "Car", "Truck", "Bus", "Motorcycle", "Bicycle"]
+            class_names = ["person", "Car", "Truck", "Bus", "Motorcycle", "Bicycle"] # SHIFT
+            class_names = ["Person", "Rider", "Car", "Train", "Motorcycle", "Bicycle", "Truck", "Bus"] # CityScapes
                 
-            for i in range(len(student_imgs)):
+            '''for i in range(len(student_imgs)):
                 student_img = student_imgs[i].permute(1, 2, 0).cpu().numpy()
                 student_img = cv2.cvtColor(student_img, cv2.COLOR_BGR2RGB)   
                 #print(student_img.shape[0]) # 608
@@ -258,10 +259,11 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
                 
                 plt.tight_layout()
                 plt.savefig(f'results/images/{self.s//5}_img_view{i}.png', dpi=500)
-                plt.close() '''
-            ### --
+                plt.close() 
+            ### --'''
 
-        epochs = 2400 # Number of images
+        epochs = 2400 # Number of images # SHIFT
+        epochs = 500 # CityScapes
         if self.s == epochs*self.optim_steps:
             print("Saving plots...")
             # Plot Consistency Loss
