@@ -107,7 +107,7 @@ train_dataloader = dict(
 
 val_dataset=dict(
     type=dataset_type,
-    ann_file=data_root + 'det_2d_cocoformat_0.005_new.json',
+    ann_file=data_root + 'det_2d_cocoformat_0.02_new.json',
     data_prefix=dict(img=data_root + ''),
     test_mode=True,
     filter_cfg=dict(attributes=attributes),
@@ -118,7 +118,7 @@ val_dataloader = dict(
     num_workers=4,
     persistent_workers=True,
     drop_last=False,
-    sampler=dict(type='DefaultSampler'),
+    sampler=dict(type='DefaultSampler', shuffle=False),
     dataset=val_dataset)
 test_dataloader = val_dataloader
 # optimizer

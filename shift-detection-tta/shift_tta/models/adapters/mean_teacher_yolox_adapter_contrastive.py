@@ -211,11 +211,11 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             self.final_losses.append(loss.detach().cpu().numpy())
             self.consistency_losses.append(consistency_loss.detach().cpu().numpy())
             self.contrastive_losses.append(contrastive_loss.detach().cpu().numpy())
-            print("Step:", self.s//self.optim_steps)
+            '''print("Step:", self.s//self.optim_steps)
             print("Consistency loss:", consistency_loss)
             print("Contrastive loss:", contrastive_loss)
             print("Final loss:", loss)
-            print()
+            print()'''
             
             ### -- Save augmented image of the student with bboxes
             teacher_img_vis = teacher_img[0].permute(1, 2, 0).cpu().numpy()
@@ -225,7 +225,8 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             teacher_label = teacher_orig_predictions[0].labels
             class_names = ["person", "Car", "Truck", "Bus", "Motorcycle", "Bicycle"] # SHIFT
             class_names = ["Person", "Rider", "Car", "Train", "Motorcycle", "Bicycle", "Truck", "Bus"] # CityScapes
-                
+            class_names = ['Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare'] # Kitti
+            
             '''for i in range(len(student_imgs)):
                 student_img = student_imgs[i].permute(1, 2, 0).cpu().numpy()
                 student_img = cv2.cvtColor(student_img, cv2.COLOR_BGR2RGB)   
@@ -264,6 +265,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
 
         epochs = 2400 # Number of images # SHIFT
         epochs = 500 # CityScapes
+        epochs = 14964 # Kitti
         if self.s == epochs*self.optim_steps:
             print("Saving plots...")
             # Plot Consistency Loss

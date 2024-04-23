@@ -3,13 +3,15 @@ _base_ = [
     '../../_base_/default_runtime.py'
 ]
 
+
 dataset_type = 'SHIFTDataset'
 data_root = 'data/shift/'
+# attributes = dict(weather_coarse='clear', timeofday_coarse='daytime')
 attributes = None
 
 ratio = 0.75
-img_scale = (800*ratio, 1440*ratio)
-batch_size = 1
+img_scale = (800*ratio, 1440*ratio) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
+batch_size = 1 ### 2
 
 model = dict(
     type='AdaptiveDetector',
@@ -26,13 +28,64 @@ model = dict(
     detector=dict(
         _scope_='mmdet',
         bbox_head=dict(num_classes=6),
-        test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.7)),
+        test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.7)), # 0.01 0.7
         init_cfg=dict(
             type='Pretrained',
             checkpoint=  # noqa: E251
             'https://download.openmmlab.com/mmdetection/v2.0/yolox/yolox_x_8x8_300e_coco/yolox_x_8x8_300e_coco_20211126_140254-1ef88d67.pth'  # noqa: E501
         )),
-    adapter=None)
+    adapter=dict(
+        type='MeanTeacherYOLOXAdapterContrastive', ### Use Mean Teacher with Contrastive loss
+        episodic=True,  # do NOT change this. episodic must be set to True for the WVCL ICCV 2023 SHIFT Challenges 
+        optim_wrapper=dict(
+            type='OptimWrapper',
+            optimizer=dict(
+                type='SGD', lr=0.00025, momentum=0.9, weight_decay=5e-4, nesterov=True), # lr=0.00025
+                #type='Adam', lr=0.000025, weight_decay=5e-4),
+            paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.)),
+        optim_steps=5,
+        teacher=dict(
+            type='ExponentialMovingAverage',
+            momentum=0.0002, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight, momentum=0.0002
+            update_buffers=True),
+        filter_pseudo_labels=0.7,
+        loss=dict(
+            type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
+            weight_consistency_loss=0.01, # 0.01
+            weight_contrastive_loss=0.003,
+            contrastive=False,
+        ),
+        stochastic_restoration=False,
+        rst_prob=0.025, #0.05
+        fixed_source_model=False,
+        pipeline = [
+            dict(type='LoadImageFromFile',
+                backend_args=dict(
+                    backend='tar',
+                    tar_path=data_root + 'continuous/videos/1x/val/front/img_decompressed.tar',
+                )
+            ),
+            dict(type='mmtrack.LoadTrackAnnotations'),
+        ],
+        teacher_pipeline = [
+            dict(type='mmdet.Resize', scale=img_scale, keep_ratio=True),
+            dict(
+                type='mmdet.Pad',
+                size_divisor=32,
+                pad_val=dict(img=(114.0, 114.0, 114.0))),
+            dict(type='mmtrack.PackTrackInputs', pack_single_img=True),
+        ],
+        student_pipeline = [
+            dict(type='mmdet.YOLOXHSVRandomAug'),
+            dict(type='mmdet.Resize', scale=img_scale, keep_ratio=True),
+            dict(
+                type='mmdet.Pad',
+                size_divisor=32,
+                pad_val=dict(img=(114.0, 114.0, 114.0))),
+            dict(type='mmtrack.PackTrackInputs', pack_single_img=True),
+        ],
+        views=2,
+    ))
 
 train_pipeline = [
     dict(
@@ -136,11 +189,12 @@ val_dataloader = dict(
 test_dataloader = val_dataloader
 # optimizer
 # default 8 gpu
-lr = 0.0005 / 8 * batch_size
+lr = 0.00005 / 8 * batch_size
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
         type='SGD', lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True),
+        #type='Adam', lr=lr, weight_decay=5e-4),
     paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.))
 
 # some hyper parameters
@@ -197,6 +251,9 @@ custom_hooks = [
         priority=49)
 ]
 default_hooks = dict(checkpoint=dict(interval=1))
+
+seed = 1234
+randomness = dict(seed=seed, deterministic=True)
 
 # evaluator
 val_evaluator = [

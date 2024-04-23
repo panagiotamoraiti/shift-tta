@@ -36,3 +36,4 @@ shift_tta/models/losses/yolox_consistency_contrastive_loss.py
 shift_tta/models/losses/yolox_consistency_loss.py
 shift_tta/utils/__init__.py
 shift_tta/utils/setup_env.py
+shift_tta/datasets/kitti_dataset.py

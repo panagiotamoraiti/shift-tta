@@ -4,9 +4,9 @@ _base_ = [
 ]
 
 
-dataset_type = 'mmdet.datasets.CityscapesDataset'
-data_root = 'data/cityscapes_foggy/leftImg8bit/val/'
-attributes = dict(weather_coarse='all', timeofday_coarse='all')
+dataset_type = 'KittiDataset'
+data_root = 'data/kitti/'
+attributes = None
 
 ratio = 0.75
 img_scale = (800*ratio, 1440*ratio) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
@@ -26,7 +26,7 @@ model = dict(
         ]),
     detector=dict(
         _scope_='mmdet',
-        bbox_head=dict(num_classes=8),
+        bbox_head=dict(num_classes=9),
         test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.7)),
         init_cfg=dict(
             type='Pretrained',
@@ -161,9 +161,9 @@ train_dataset = dict(
     type='mmdet.MultiImageMixDataset',
     dataset=dict(
         type=dataset_type,
-        ann_file=data_root + 'leftImg8bit/train/det_2d_cocoformat.json',
-        data_prefix=dict(img=data_root + ''),
-        metainfo=dict(classes=('person', 'rider', 'car', 'train', 'motorcycle', 'bicycle', 'truck', 'bus')),
+        ann_file=data_root + 'data_object/training/train.json',
+        data_prefix=dict(img=data_root + 'data_object/training'),
+        metainfo=dict(classes=('Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare')),
         pipeline=[
             dict(type='LoadImageFromFile'),
             dict(type='mmtrack.LoadTrackAnnotations'),
@@ -183,12 +183,12 @@ train_dataloader = dict(
 
 val_dataset=dict(
     type=dataset_type,
-    ann_file=data_root + 'det_2d_cocoformat_all_new1.json',
-    data_prefix=dict(img=data_root + ''),
+    ann_file=data_root + 'data_object/training/fog-rain-snow-clear_final.json',
+    data_prefix=dict(img=data_root + 'data_object/training'),
     test_mode=True,
     filter_cfg=dict(attributes=attributes),
     pipeline=test_pipeline,
-    metainfo=dict(classes=('person', 'rider', 'car', 'train', 'motorcycle', 'bicycle', 'truck', 'bus')))
+    metainfo=dict(classes=('Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare')))
 val_dataloader = dict(
     batch_size=1,
     num_workers=4,
@@ -266,6 +266,6 @@ randomness = dict(seed=seed, deterministic=True)
 
 # evaluator
 val_evaluator = [
-    dict(type='CityscapesMetric', metric=['bbox'], classwise=True),
+    dict(type='KittiMetric', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator

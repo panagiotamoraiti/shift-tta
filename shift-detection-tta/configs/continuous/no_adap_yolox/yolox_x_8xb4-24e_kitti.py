@@ -3,12 +3,13 @@ _base_ = [
     '../../_base_/default_runtime.py'
 ]
 
-dataset_type = 'SHIFTDataset'
-data_root = 'data/shift/'
+dataset_type = 'KittiDataset'
+data_root = 'data/kitti/'
 attributes = None
 
 ratio = 0.75
-img_scale = (800*ratio, 1440*ratio)
+img_scale = (800*ratio, 1440*ratio) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
+
 batch_size = 1
 
 model = dict(
@@ -25,7 +26,7 @@ model = dict(
         ]),
     detector=dict(
         _scope_='mmdet',
-        bbox_head=dict(num_classes=6),
+        bbox_head=dict(num_classes=9),
         test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.7)),
         init_cfg=dict(
             type='Pretrained',
@@ -69,12 +70,7 @@ train_pipeline = [
     dict(type='mmtrack.PackTrackInputs', pack_single_img=True)
 ]
 test_pipeline = [
-    dict(type='LoadImageFromFile',
-         backend_args=dict(
-             backend='tar',
-             tar_path=data_root + 'continuous/videos/1x/val/front/img_decompressed.tar',
-         )
-    ),
+    dict(type='LoadImageFromFile'),
     dict(type='mmtrack.LoadTrackAnnotations'),
     dict(type='mmdet.Resize', scale=img_scale, keep_ratio=True),
     dict(
@@ -88,19 +84,12 @@ train_dataset = dict(
     # use MultiImageMixDataset wrapper to support mosaic and mixup
     type='mmdet.MultiImageMixDataset',
     dataset=dict(
-        type='SHIFTDataset',
-        load_as_video=False,
-        ann_file=data_root + 'discrete/images/train/front/det_2d_cocoformat.json',
-        data_prefix=dict(img=''),
-        ref_img_sampler=None,
-        metainfo=dict(classes=('pedestrian', 'car', 'truck', 'bus', 'motorcycle', 'bicycle')),
+        type=dataset_type,
+        ann_file=data_root + 'data_object/training/train.json',
+        data_prefix=dict(img=data_root + 'data_object/training'),
+        metainfo=dict(classes=('Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare')),
         pipeline=[
-            dict(type='LoadImageFromFile', 
-                backend_args=dict(
-                    backend='zip',
-                    zip_path=data_root + 'discrete/images/train/front/img.zip',
-                )
-            ),
+            dict(type='LoadImageFromFile'),
             dict(type='mmtrack.LoadTrackAnnotations'),
         ],
         filter_cfg=dict(
@@ -117,21 +106,19 @@ train_dataloader = dict(
     dataset=train_dataset)
 
 val_dataset=dict(
-    type='SHIFTDataset',
-    load_as_video=True,
-    ann_file=data_root + 'continuous/videos/1x/val/front/det_2d_cocoformat.json',
-    data_prefix=dict(img=''),
-    ref_img_sampler=None,
+    type=dataset_type,
+    ann_file=data_root + 'data_object/training/fog-rain-snow-clear_final.json',
+    data_prefix=dict(img=data_root + 'data_object/training'),
     test_mode=True,
     filter_cfg=dict(attributes=attributes),
     pipeline=test_pipeline,
-    metainfo=dict(classes=('pedestrian', 'car', 'truck', 'bus', 'motorcycle', 'bicycle')))
+    metainfo=dict(classes=('Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare')))
 val_dataloader = dict(
     batch_size=1,
     num_workers=4,
     persistent_workers=True,
     drop_last=False,
-    sampler=dict(type='mmtrack.VideoSampler'),
+    sampler=dict(type='DefaultSampler', shuffle=False),
     dataset=val_dataset)
 test_dataloader = val_dataloader
 # optimizer
@@ -198,8 +185,11 @@ custom_hooks = [
 ]
 default_hooks = dict(checkpoint=dict(interval=1))
 
+seed = 1234
+randomness = dict(seed=seed, deterministic=True)
+
 # evaluator
 val_evaluator = [
-    dict(type='SHIFTVideoMetric', metric=['bbox'], classwise=True),
+    dict(type='KittiMetric', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator

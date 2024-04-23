@@ -6,7 +6,7 @@ _base_ = [
 
 dataset_type = 'mmdet.datasets.CityscapesDataset'
 data_root = 'data/cityscapes_foggy/leftImg8bit/val/'
-attributes = dict(weather_coarse='all', timeofday_coarse='all')
+attributes = None
 
 ratio = 0.75
 img_scale = (800*ratio, 1440*ratio) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
@@ -41,7 +41,7 @@ model = dict(
             optimizer=dict(
                 type='SGD', lr=0.00025, momentum=0.9, weight_decay=5e-4, nesterov=True),
             paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.)),
-        optim_steps=5,
+        optim_steps=5, # 5
         teacher=dict(
             type='ExponentialMovingAverage',
             momentum=0.0002, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight
@@ -54,7 +54,7 @@ model = dict(
             contrastive=False,
         ),
         stochastic_restoration=False,
-        rst_prob=0.05,
+        rst_prob=0.01,
         fixed_source_model=False,
         pipeline = [
             dict(type='LoadImageFromFile'),
@@ -152,7 +152,7 @@ train_dataloader = dict(
 
 val_dataset=dict(
     type=dataset_type,
-    ann_file=data_root + 'det_2d_cocoformat_0.02_new.json',
+    ann_file=data_root + 'det_2d_cocoformat_all_new1.json',
     data_prefix=dict(img=data_root + ''),
     test_mode=True,
     filter_cfg=dict(attributes=attributes),
@@ -163,7 +163,7 @@ val_dataloader = dict(
     num_workers=4,
     persistent_workers=True,
     drop_last=False,
-    sampler=dict(type='DefaultSampler'),
+    sampler=dict(type='DefaultSampler', shuffle=False),
     dataset=val_dataset)
 test_dataloader = val_dataloader
 # optimizer

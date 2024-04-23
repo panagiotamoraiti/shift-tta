@@ -255,7 +255,7 @@ class SHIFTVideoMetric(CocoVideoMetric):
         fog_source_end = 8
         fog_loopback_start = 392'''
         
-        night_start = 180
+        '''night_start = 180
         night_end = 220
         rain_start = 180
         rain_end = 220
@@ -267,7 +267,12 @@ class SHIFTVideoMetric(CocoVideoMetric):
         rain_source_end = 20
         rain_loopback_start = 380
         fog_source_end = 20
-        fog_loopback_start = 380
+        fog_loopback_start = 380'''
+        
+        start_target = 180
+        end_target = 220
+        end_source = 20
+        start_loopback = 380
                
         part1_results = []
         part2_results = []
@@ -279,7 +284,7 @@ class SHIFTVideoMetric(CocoVideoMetric):
                 video_name = result[1]["video_name"].split('.')[0]
                 img_name = int(result[1]["img_name"].split('_')[0])
 
-                # Find which domain shift happens
+                '''# Find which domain shift happens
                 if domain_shifts[video_name] == "daytime_to_night":
                     start_target = night_start
                     end_target = night_end
@@ -294,7 +299,7 @@ class SHIFTVideoMetric(CocoVideoMetric):
                     start_target = fog_start
                     end_target = fog_end
                     end_source = fog_source_end
-                    start_loopback = fog_loopback_start
+                    start_loopback = fog_loopback_start'''
 
                 # Put the image in the correct part
                 if img_name < end_source:
