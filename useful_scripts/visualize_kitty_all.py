@@ -40,10 +40,10 @@ def visualize_bboxes_save_images(image_path, bboxes, labels, output_path):
 
 # KITTI
 path = "/home/panagiota/work/tta/processed_data/visualize_bboxes/kitti/fog-rain-snow-clear/"
-img_path = "/home/panagiota/work/tta/shift-detection-tta/data/kitti/data_object/training/"
+img_path = "/home/panagiota/work/tta/shift-detection-tta/data/kitti/data_object/training"
 
 json_path = "/home/panagiota/work/tta/shift-detection-tta/data/kitti/data_object/training/"
-json_data = read_json_file(json_path + 'fog-rain-snow-clear.json')
+json_data = read_json_file(json_path + 'fog-rain-snow-clear_new.json')
 
 class_names = {1: "Car", 2: "Van", 3: "Pedestrian", 4: "Cyclist", 5: "Truck", 6: "Misc", 7: "Tram",
                8: "Person_sitting", 9: "DontCare"}
@@ -55,8 +55,20 @@ for item in json_data['images']:
     parts = file_name.split('/')
     image_name = parts[-1]
     img_id = item['id']
-    output_path = os.path.join(path, image_name)
-    # print(img_id)
+
+    if "fog" in file_name:
+        weather = "fog"
+    if "rain" in file_name:
+        weather = "rain"
+    if "snow" in file_name:
+        weather = "snow"
+    if "image_2" in file_name:
+        weather = "clear"
+
+    if weather == "fog" or weather == "rain" or weather == "snow":
+        continue
+    output_path = os.path.join(path, weather)
+    output_path = os.path.join(output_path, image_name)
 
     # For every image draw bboxes and labels
     bboxes = []
@@ -73,8 +85,11 @@ for item in json_data['images']:
     # print(labels)
     # print(bboxes)
 
-    file_name = os.path.join(img_path, file_name)
 
     # Visualize bounding boxes and categories
     # visualize_bboxes_save_images(file_name, bboxes, labels, scores, output_path)
-    visualize_bboxes_save_images(file_name, bboxes, labels, output_path)
+
+    file_name_new = img_path + file_name
+    print(file_name)
+
+    visualize_bboxes_save_images(file_name_new, bboxes, labels, output_path)
