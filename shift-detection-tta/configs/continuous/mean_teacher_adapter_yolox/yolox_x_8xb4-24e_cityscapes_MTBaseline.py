@@ -78,6 +78,9 @@ model = dict(
             dict(type='mmtrack.PackTrackInputs', pack_single_img=True),
         ],
         views=2,
+        plot=True,
+        plot_augmented_imgs=False,
+        dataset='cityscapes'
     ))
 
 train_pipeline = [
@@ -152,7 +155,7 @@ train_dataloader = dict(
 
 val_dataset=dict(
     type=dataset_type,
-    ann_file=data_root + 'det_2d_cocoformat_all_new1.json',
+    ann_file=data_root + '0.005_0.01_0.02_clear.json',
     data_prefix=dict(img=data_root + ''),
     test_mode=True,
     filter_cfg=dict(attributes=attributes),

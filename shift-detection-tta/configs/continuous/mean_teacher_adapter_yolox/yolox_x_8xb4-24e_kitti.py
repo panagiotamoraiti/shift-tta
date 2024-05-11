@@ -41,19 +41,19 @@ model = dict(
             optimizer=dict(
                 type='SGD', lr=0.00025, momentum=0.9, weight_decay=5e-4, nesterov=True),
             paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.)),
-        optim_steps=5, # 5
+        optim_steps=1, # 5
         teacher=dict(
             type='ExponentialMovingAverage',
-            momentum=0.00035, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight
+            momentum=0.00005, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight
             update_buffers=True),
         filter_pseudo_labels=0.7,
         loss=dict(
             type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
             weight_consistency_loss=0.005,
             weight_contrastive_loss=0.003,
-            contrastive=True,
+            contrastive=False,
         ),
-        stochastic_restoration=False,
+        stochastic_restoration=True,
         rst_prob=0.01,
         fixed_source_model=False,
         pipeline = [
@@ -109,6 +109,9 @@ model = dict(
             dict(type='mmtrack.PackTrackInputs', pack_single_img=True),
         ],
         views=2,
+        plot=True,
+        plot_augmented_imgs=False,
+        dataset='kitti'
     ))
 
 train_pipeline = [

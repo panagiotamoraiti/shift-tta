@@ -49,6 +49,9 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
                  teacher_pipeline: Optional[list[dict]] = None,
                  student_pipeline: Optional[list[dict]] = None,
                  views: int = 1,
+                 plot: bool = True,
+                 plot_augmented_imgs: bool = False,
+                 dataset: str = 'shift',
                  **kwargs) -> None:
         super().__init__(**kwargs)  
 
@@ -81,6 +84,9 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         self.final_losses = []
         self.steps = []
         self.s = 0
+        self.plot = plot
+        self.plot_augmented_imgs = plot_augmented_imgs
+        self.dataset = dataset
 
         # TODO: implement param_scheduler for optimizer (e.g. lr decay)
 
@@ -223,86 +229,104 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             teacher_reg_boxes = teacher_orig_predictions[0].bboxes
             teacher_score = teacher_orig_predictions[0].scores
             teacher_label = teacher_orig_predictions[0].labels
-            class_names = ["person", "Car", "Truck", "Bus", "Motorcycle", "Bicycle"] # SHIFT
-            class_names = ["Person", "Rider", "Car", "Train", "Motorcycle", "Bicycle", "Truck", "Bus"] # CityScapes
-            class_names = ['Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare'] # Kitti
             
-            '''for i in range(len(student_imgs)):
-                student_img = student_imgs[i].permute(1, 2, 0).cpu().numpy()
-                student_img = cv2.cvtColor(student_img, cv2.COLOR_BGR2RGB)   
-                #print(student_img.shape[0]) # 608
-                #print(student_img.shape[1]) # 960
-   
-                for box, label, score in zip(teacher_reg_boxes, teacher_label, teacher_score):
-                    xmin, ymin, xmax, ymax = map(int, box)
-                    cv2.rectangle(teacher_img_vis, (xmin, ymin), (xmax, ymax), (255, 0, 0), 1)
-                    cv2.rectangle(student_img, (xmin-5, ymin-3), (xmax-5, ymax-3), (255, 0, 0), 1)  
+            if self.dataset == 'shift':
+                epochs = 2400 # Number of images # SHIFT
+                class_names = ["person", "Car", "Truck", "Bus", "Motorcycle", "Bicycle"] # SHIFT
+            elif self.dataset == 'cityscapes':
+                epochs = 2000 # CityScapes
+                class_names = ["Person", "Rider", "Car", "Train", "Motorcycle", "Bicycle", "Truck", "Bus"] # CityScapes
+            elif self.dataset == 'kitti':
+                epochs = 14964 # Kitti
+                class_names = ['Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare'] # Kitti
+            elif self.dataset=="coco":
+                epochs = 80000 # Coco
+                class_names = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'street sign', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'hat', 'backpack', 'umbrella', 'shoe', 'eye glasses', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle', 'plate', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'mirror', 'dining table', 'window', 'desk', 'toilet', 'door', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'blender', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush', 'hair brush'] # Coco
+            
+            if self.plot_augmented_imgs:
+                for i in range(len(student_imgs)):
+                    student_img = student_imgs[i].permute(1, 2, 0).cpu().numpy()
+                    student_img = cv2.cvtColor(student_img, cv2.COLOR_BGR2RGB)   
+                    #print(student_img.shape[0]) # 608
+                    #print(student_img.shape[1]) # 960
+       
+                    for box, label, score in zip(teacher_reg_boxes, teacher_label, teacher_score):
+                        xmin, ymin, xmax, ymax = map(int, box)
+                        cv2.rectangle(teacher_img_vis, (xmin, ymin), (xmax, ymax), (255, 0, 0), 1)
+                        cv2.rectangle(student_img, (xmin-5, ymin-3), (xmax-5, ymax-3), (255, 0, 0), 1)  
+            
+                        # Add label and score
+                        label_text = f"{class_names[label]} {score:.2f}"
+                        (label_width, label_height), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                        cv2.rectangle(teacher_img_vis, (xmin, ymin - label_height - 8), (xmin + label_width, ymin - 2), (255, 255, 255), -1)
+                        cv2.putText(teacher_img_vis, label_text, (xmin, ymin - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2, cv2.LINE_AA)
+
+                    # Remove normalization for visualization
+                    student_img = student_img.clip(0, 255).astype(np.uint8)
+                    teacher_img_vis = teacher_img_vis.clip(0, 255).astype(np.uint8)
+                    
+                    plt.subplot(1, 2, 1) 
+                    plt.imshow(teacher_img_vis)
+                    plt.title("Teacher Image")
+                    plt.axis('off')
+                    
+                    plt.subplot(1, 2, 2)
+                    plt.imshow(student_img)
+                    plt.title(f"Student Augmented View {i}")
+                    plt.axis('off')
+                    
+                    plt.tight_layout()
+                    plt.savefig(f'results/images/{self.s//5}_img_view{i}.png', dpi=500)
+                    plt.close() 
+            ### --
+
+        if self.dataset == 'shift':
+            epochs = 2400 # Number of images # SHIFT
+        elif self.dataset == 'cityscapes':
+            epochs = 2000 # CityScapes
+        elif self.dataset == 'kitti':
+            epochs = 14964 # Kitti
+        elif self.dataset=="coco":
+                epochs = 80000 # Coco
         
-                    # Add label and score
-                    label_text = f"{class_names[label]} {score:.2f}"
-                    (label_width, label_height), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
-                    cv2.rectangle(teacher_img_vis, (xmin, ymin - label_height - 8), (xmin + label_width, ymin - 2), (255, 255, 255), -1)
-                    cv2.putText(teacher_img_vis, label_text, (xmin, ymin - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2, cv2.LINE_AA)
-
-                # Remove normalization for visualization
-                student_img = student_img.clip(0, 255).astype(np.uint8)
-                teacher_img_vis = teacher_img_vis.clip(0, 255).astype(np.uint8)
-                
-                plt.subplot(1, 2, 1) 
-                plt.imshow(teacher_img_vis)
-                plt.title("Teacher Image")
-                plt.axis('off')
-                
-                plt.subplot(1, 2, 2)
-                plt.imshow(student_img)
-                plt.title(f"Student Augmented View {i}")
-                plt.axis('off')
-                
+        if self.plot:
+            if self.s == epochs*self.optim_steps:
+                print("Saving plots...")
+                # Plot Consistency Loss
+                plt.figure(figsize=(10, 6))
+                plt.plot(self.steps, self.consistency_losses, label='Consistency Loss', linewidth=2, color='blue')
+                plt.xlabel('Steps')
+                plt.ylabel('Consistency Loss')
+                plt.title('Consistency Loss over Steps')
+                plt.legend()
+                plt.grid(True)
                 plt.tight_layout()
-                plt.savefig(f'results/images/{self.s//5}_img_view{i}.png', dpi=500)
-                plt.close() 
-            ### --'''
+                plt.savefig('results/plots/consistency_loss_plot.png')
+                plt.close()
 
-        epochs = 2400 # Number of images # SHIFT
-        epochs = 500 # CityScapes
-        epochs = 14964 # Kitti
-        if self.s == epochs*self.optim_steps:
-            print("Saving plots...")
-            # Plot Consistency Loss
-            plt.figure(figsize=(10, 6))
-            plt.plot(self.steps, self.consistency_losses, label='Consistency Loss', linewidth=2, color='blue')
-            plt.xlabel('Steps')
-            plt.ylabel('Consistency Loss')
-            plt.title('Consistency Loss over Steps')
-            plt.legend()
-            plt.grid(True)
-            plt.tight_layout()
-            plt.savefig('results/plots/consistency_loss_plot.png')
-            plt.close()
+                # Plot Contrastive Loss
+                plt.figure(figsize=(10, 6))
+                plt.plot(self.steps, self.contrastive_losses, label='Contrastive Loss', linewidth=2, color='green')
+                plt.xlabel('Steps')
+                plt.ylabel('Contrastive Loss')
+                plt.title('Contrastive Loss over Steps')
+                plt.legend()
+                plt.grid(True)
+                plt.tight_layout()
+                plt.savefig('results/plots/contrastive_loss_plot.png')
+                plt.close()
 
-            # Plot Contrastive Loss
-            plt.figure(figsize=(10, 6))
-            plt.plot(self.steps, self.contrastive_losses, label='Contrastive Loss', linewidth=2, color='green')
-            plt.xlabel('Steps')
-            plt.ylabel('Contrastive Loss')
-            plt.title('Contrastive Loss over Steps')
-            plt.legend()
-            plt.grid(True)
-            plt.tight_layout()
-            plt.savefig('results/plots/contrastive_loss_plot.png')
-            plt.close()
-
-            # Plot Final Loss
-            plt.figure(figsize=(10, 6))
-            plt.plot(self.steps, self.final_losses, label='Final Loss', linewidth=2, color='red')
-            plt.xlabel('Steps')
-            plt.ylabel('Final Loss')
-            plt.title('Final Loss over Steps')
-            plt.legend()
-            plt.grid(True)
-            plt.tight_layout()
-            plt.savefig('results/plots/final_loss_plot.png')
-            plt.close()
+                # Plot Final Loss
+                plt.figure(figsize=(10, 6))
+                plt.plot(self.steps, self.final_losses, label='Final Loss', linewidth=2, color='red')
+                plt.xlabel('Steps')
+                plt.ylabel('Final Loss')
+                plt.title('Final Loss over Steps')
+                plt.legend()
+                plt.grid(True)
+                plt.tight_layout()
+                plt.savefig('results/plots/final_loss_plot.png')
+                plt.close()
         ### --
 
         # adapt student

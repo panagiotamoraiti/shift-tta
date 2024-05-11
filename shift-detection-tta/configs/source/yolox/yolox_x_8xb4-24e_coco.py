@@ -3,14 +3,12 @@ _base_ = [
     '../../_base_/default_runtime.py'
 ]
 
+dataset_type = 'mmdet.datasets.CocoDataset'
+data_root = 'data/coco/'
+attributes = None
 
-dataset_type = 'SHIFTDataset'
-data_root = 'data/shift/'
-attributes = dict(weather_coarse='clear', timeofday_coarse='daytime')
-
-ratio = 0.75
-img_scale = (800*ratio, 1440*ratio) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
-batch_size = 1 ### 2
+img_scale = (800, 1440)
+batch_size = 2
 
 model = dict(
     type='AdaptiveDetector',
@@ -26,68 +24,14 @@ model = dict(
         ]),
     detector=dict(
         _scope_='mmdet',
-        bbox_head=dict(num_classes=6),
-        test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.7)), # 0.01 0.7
+        bbox_head=dict(num_classes=91),
+        test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.7)),
         init_cfg=dict(
             type='Pretrained',
             checkpoint=  # noqa: E251
             'https://download.openmmlab.com/mmdetection/v2.0/yolox/yolox_x_8x8_300e_coco/yolox_x_8x8_300e_coco_20211126_140254-1ef88d67.pth'  # noqa: E501
         )),
-    adapter=dict(
-        type='MeanTeacherYOLOXAdapterContrastive', ### Use Mean Teacher with Contrastive loss
-        episodic=True,  # do NOT change this. episodic must be set to True for the WVCL ICCV 2023 SHIFT Challenges 
-        optim_wrapper=dict(
-            type='OptimWrapper',
-            optimizer=dict(
-                type='SGD', lr=0.00025, momentum=0.9, weight_decay=5e-4, nesterov=True), # lr=0.00025
-                #type='Adam', lr=0.000025, weight_decay=5e-4),
-            paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.)),
-        optim_steps=5,
-        teacher=dict(
-            type='ExponentialMovingAverage',
-            momentum=0.0002, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight, momentum=0.0002
-            update_buffers=True),
-        filter_pseudo_labels=0.7,
-        loss=dict(
-            type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
-            weight_consistency_loss=0.01, # 0.01
-            weight_contrastive_loss=0.003,
-            contrastive=False,
-        ),
-        stochastic_restoration=False,
-        rst_prob=0.025, #0.05
-        fixed_source_model=False,
-        pipeline = [
-            dict(type='LoadImageFromFile',
-                backend_args=dict(
-                    backend='tar',
-                    tar_path=data_root + 'continuous/videos/1x/val/front/img_decompressed.tar',
-                )
-            ),
-            dict(type='mmtrack.LoadTrackAnnotations'),
-        ],
-        teacher_pipeline = [
-            dict(type='mmdet.Resize', scale=img_scale, keep_ratio=True),
-            dict(
-                type='mmdet.Pad',
-                size_divisor=32,
-                pad_val=dict(img=(114.0, 114.0, 114.0))),
-            dict(type='mmtrack.PackTrackInputs', pack_single_img=True),
-        ],
-        student_pipeline = [
-            dict(type='mmdet.YOLOXHSVRandomAug'),
-            dict(type='mmdet.Resize', scale=img_scale, keep_ratio=True),
-            dict(
-                type='mmdet.Pad',
-                size_divisor=32,
-                pad_val=dict(img=(114.0, 114.0, 114.0))),
-            dict(type='mmtrack.PackTrackInputs', pack_single_img=True),
-        ],
-        views=2,
-        plot=True,
-        plot_augmented_imgs=False,
-        dataset='shift'
-    ))
+    adapter=None)
 
 train_pipeline = [
     dict(
@@ -124,12 +68,7 @@ train_pipeline = [
     dict(type='mmtrack.PackTrackInputs', pack_single_img=True)
 ]
 test_pipeline = [
-    dict(type='LoadImageFromFile',
-         backend_args=dict(
-             backend='tar',
-             tar_path=data_root + 'continuous/videos/1x/val/front/img_decompressed.tar',
-         )
-    ),
+    dict(type='LoadImageFromFile'),
     dict(type='mmtrack.LoadTrackAnnotations'),
     dict(type='mmdet.Resize', scale=img_scale, keep_ratio=True),
     dict(
@@ -143,19 +82,12 @@ train_dataset = dict(
     # use MultiImageMixDataset wrapper to support mosaic and mixup
     type='mmdet.MultiImageMixDataset',
     dataset=dict(
-        type='SHIFTDataset',
-        load_as_video=False,
-        ann_file=data_root + 'discrete/images/train/front/det_2d_cocoformat.json',
-        data_prefix=dict(img=''),
-        ref_img_sampler=None,
-        metainfo=dict(classes=('pedestrian', 'car', 'truck', 'bus', 'motorcycle', 'bicycle')),
+        type=dataset_type,
+        ann_file=data_root + 'annotations/annotations_trainval2017/annotations/instances_train2017.json',
+        data_prefix=dict(img=data_root + 'images/train2017'),
+        metainfo=dict(classes=('person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'street sign', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'hat', 'backpack', 'umbrella', 'shoe', 'eye glasses', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle', 'plate', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'mirror', 'dining table', 'window', 'desk', 'toilet', 'door', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'blender', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush', 'hair brush')),
         pipeline=[
-            dict(type='LoadImageFromFile', 
-                backend_args=dict(
-                    backend='zip',
-                    zip_path=data_root + 'discrete/images/train/front/img.zip',
-                )
-            ),
+            dict(type='LoadImageFromFile'),
             dict(type='mmtrack.LoadTrackAnnotations'),
         ],
         filter_cfg=dict(
@@ -172,39 +104,36 @@ train_dataloader = dict(
     dataset=train_dataset)
 
 val_dataset=dict(
-    type='SHIFTDataset',
-    load_as_video=True,
-    ann_file=data_root + 'continuous/videos/1x/val/front/det_2d_cocoformat.json',
-    data_prefix=dict(img=''),
-    ref_img_sampler=None,
+    type=dataset_type,
+    ann_file=data_root + 'annotations/annotations_trainval2017/annotations/instances_val2017.json',
+    data_prefix=dict(img=data_root + 'images/val2017'),
     test_mode=True,
     filter_cfg=dict(attributes=attributes),
     pipeline=test_pipeline,
-    metainfo=dict(classes=('pedestrian', 'car', 'truck', 'bus', 'motorcycle', 'bicycle')))
+    metainfo=dict(classes=('person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'street sign', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'hat', 'backpack', 'umbrella', 'shoe', 'eye glasses', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle', 'plate', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'mirror', 'dining table', 'window', 'desk', 'toilet', 'door', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'blender', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush', 'hair brush')))
 val_dataloader = dict(
     batch_size=1,
     num_workers=4,
     persistent_workers=True,
     drop_last=False,
-    sampler=dict(type='mmtrack.VideoSampler'),
+    sampler=dict(type='DefaultSampler'),
     dataset=val_dataset)
 test_dataloader = val_dataloader
 # optimizer
 # default 8 gpu
-lr = 0.00005 / 8 * batch_size
+lr = 0.0005 / 8 * batch_size
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
         type='SGD', lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True),
-        #type='Adam', lr=lr, weight_decay=5e-4),
     paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.))
 
 # some hyper parameters
 # training settings
-total_epochs = 12
+total_epochs = 6
 num_last_epochs = 2
 resume_from = None
-interval = 5
+interval = 2
 
 train_cfg = dict(
     type='EpochBasedTrainLoop', max_epochs=total_epochs, val_interval=1)
@@ -254,11 +183,8 @@ custom_hooks = [
 ]
 default_hooks = dict(checkpoint=dict(interval=1))
 
-seed = 1234
-randomness = dict(seed=seed, deterministic=True)
-
 # evaluator
 val_evaluator = [
-    dict(type='SHIFTVideoMetric', metric=['bbox'], classwise=True),
+    dict(type='mmdet.CocoMetric', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator

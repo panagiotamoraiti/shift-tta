@@ -115,6 +115,9 @@ model = dict(
             dict(type='mmtrack.PackTrackInputs', pack_single_img=True),
         ],
         views=2,
+        plot=True,
+        plot_augmented_imgs=False,
+        dataset='shift'
     ))
 
 train_pipeline = [

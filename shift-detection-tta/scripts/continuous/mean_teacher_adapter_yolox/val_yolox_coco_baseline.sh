@@ -1,6 +1,6 @@
-CONFIG=configs/continuous/mean_teacher_adapter_yolox/yolox_x_8xb4-24e_shift_from_all.py
-CKPT=https://dl.cv.ethz.ch/shift/challenge2023/test_time_adaptation/checkpoints/yolox_x_8xb4-24e_shift_clear_daytime.pth
-WORK_DIR=work_dirs/continuous/mean_teacher_yolox/val/yolox_x_8xb4-24e_shift_from_all
+CONFIG=configs/continuous/mean_teacher_adapter_yolox/yolox_x_8xb4-24e_coco_MTBaseline.py
+CKPT=/home/panagiota/work/tta/shift-detection-tta/checkpoints/yolox_x_8xb4-24e_coco.pth
+WORK_DIR=work_dirs/continuous/mean_teacher_yolox/val/yolox_x_8xb4-24e_coco
 
 declare -a CFG_OPTIONS=(
      "test_evaluator.0.outfile_prefix=${WORK_DIR}/results"
