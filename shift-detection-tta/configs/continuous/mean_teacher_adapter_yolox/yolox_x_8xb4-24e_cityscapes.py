@@ -51,9 +51,9 @@ model = dict(
             type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
             weight_consistency_loss=0.005,
             weight_contrastive_loss=0.003,
-            contrastive=False,
+            contrastive=True,
         ),
-        stochastic_restoration=False,
+        stochastic_restoration=True,
         rst_prob=0.01,
         fixed_source_model=False,
         pipeline = [
@@ -269,6 +269,6 @@ randomness = dict(seed=seed, deterministic=True)
 
 # evaluator
 val_evaluator = [
-    dict(type='CityscapesMetric', metric=['bbox'], classwise=True),
+    dict(type='CityscapesMetricNew', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator

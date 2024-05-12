@@ -106,13 +106,46 @@ train_dataloader = dict(
     dataset=train_dataset)
 
 val_dataset=dict(
-    type=dataset_type,
-    ann_file=data_root + '0.005_0.01_0.02_clear.json',
-    data_prefix=dict(img=data_root + ''),
-    test_mode=True,
-    filter_cfg=dict(attributes=attributes),
-    pipeline=test_pipeline,
-    metainfo=dict(classes=('person', 'rider', 'car', 'train', 'motorcycle', 'bicycle', 'truck', 'bus')))
+    type='ConcatDataset',
+        datasets=[
+            dict(
+                type=dataset_type,
+                ann_file=data_root + 'fog_0.005.json',
+                data_prefix=dict(img=data_root + ''),
+                test_mode=True,
+                filter_cfg=dict(attributes=attributes),
+                pipeline=test_pipeline,
+                metainfo=dict(classes=('person', 'rider', 'car', 'train', 'motorcycle', 'bicycle', 'truck', 'bus')
+            )),
+            dict(
+                type=dataset_type,
+                ann_file=data_root + 'fog_0.01.json',
+                data_prefix=dict(img=data_root + ''),
+                test_mode=True,
+                filter_cfg=dict(attributes=attributes),
+                pipeline=test_pipeline,
+                metainfo=dict(classes=('person', 'rider', 'car', 'train', 'motorcycle', 'bicycle', 'truck', 'bus')
+            )),
+            dict(
+                type=dataset_type,
+                ann_file=data_root + 'fog_0.02.json',
+                data_prefix=dict(img=data_root + ''),
+                test_mode=True,
+                filter_cfg=dict(attributes=attributes),
+                pipeline=test_pipeline,
+                metainfo=dict(classes=('person', 'rider', 'car', 'train', 'motorcycle', 'bicycle', 'truck', 'bus')
+            )),
+            dict(
+                type=dataset_type,
+                ann_file=data_root + 'clear.json',
+                data_prefix=dict(img=data_root + ''),
+                test_mode=True,
+                filter_cfg=dict(attributes=attributes),
+                pipeline=test_pipeline,
+                metainfo=dict(classes=('person', 'rider', 'car', 'train', 'motorcycle', 'bicycle', 'truck', 'bus')
+            )),
+            ]
+        )  
 val_dataloader = dict(
     batch_size=1,
     num_workers=4,
@@ -190,6 +223,6 @@ randomness = dict(seed=seed, deterministic=True)
 
 # evaluator
 val_evaluator = [
-    dict(type='CityscapesMetric', metric=['bbox'], classwise=True),
+    dict(type='CityscapesMetricNew', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator

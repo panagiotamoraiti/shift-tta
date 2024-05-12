@@ -1,7 +1,7 @@
 from .shift_video_metrics import SHIFTVideoMetric
-from .cityscapes_metric import CityscapesMetric
+from .cityscapes_metric import CityscapesMetricNew
 from .kitti_metric import KittiMetric
 from .coco_metric import CocoMetricNew
 
 
-__all__ = ['SHIFTVideoMetric', 'CityscapesMetric', 'KittiMetric', 'CocoMetricNew']
+__all__ = ['SHIFTVideoMetric', 'CityscapesMetricNew', 'KittiMetric', 'CocoMetricNew']

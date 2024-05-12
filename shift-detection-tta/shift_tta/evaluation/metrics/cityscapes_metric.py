@@ -4,13 +4,17 @@ import itertools
 import os.path as osp
 import tempfile
 from collections import OrderedDict
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Dict, List, Optional, Sequence, Union, Any
 from mmdet.evaluation import CocoMetric
+
+from mmengine.dist import (broadcast_object_list, collect_results, is_main_process)
+from torch import Tensor
+from mmengine.structures import BaseDataElement
 
 from shift_tta.registry import METRICS
 
 @METRICS.register_module()
-class CityscapesMetric(CocoMetric):
+class CityscapesMetricNew(CocoMetric):
     def process(self, data_batch: dict, data_samples: Sequence[dict]) -> None:
         """Process one batch of data samples and predictions. The processed
         results should be stored in ``self.results``, which will be used to
@@ -52,4 +56,87 @@ class CityscapesMetric(CocoMetric):
                 gt['anns'] = data_sample['instances']
             # add converted result to the results list
             self.results.append((gt, result))
+            
+    def evaluate(self, size: int) -> dict:
+        """Evaluate the model performance of the whole dataset after processing
+        all batches.
+
+        Args:
+            size (int): Length of the entire validation dataset. When batch
+                size > 1, the dataloader may pad some data samples to make
+                sure all ranks have the same length of dataset slice. The
+                ``collect_results`` function will drop the padded data based on
+                this size.
+
+        Returns:
+            dict: Evaluation metrics dict on the val dataset. The keys are the
+            names of the metrics, and the values are corresponding results.
+        """
+        if len(self.results) == 0:
+            print_log(
+                f'{self.__class__.__name__} got empty `self.results`. Please '
+                'ensure that the processed results are properly added into '
+                '`self.results` in `process` method.',
+                logger='current',
+                level=logging.WARNING)
+
+        if self.collect_device == 'cpu':
+            results = collect_results(
+                self.results,
+                size,
+                self.collect_device,
+                tmpdir=self.collect_dir)
+        else:
+            results = collect_results(self.results, size, self.collect_device)
+
+        if is_main_process():
+            # cast all tensors in results list to cpu
+            results = _to_cpu(results)
+            
+            print("\n\nCalculate metrics for the whole dataset!!!")
+            _metrics = self.compute_metrics(results)  # type: ignore
+            self._coco_api = None
+            
+            # Evaluate each part separately
+            num_domains = 4
+            for i in range(num_domains):
+                print(f"\n\nCalculate metrics domain number {i+1}!!!")
+                print(f"Start: {i*500}, End: {i*500+500}")
+                metrics_dom = self.compute_metrics(results[i*500:i*500+500])
+                print(f"\nMetrics for domain number {i+1}:", metrics_dom)
+                print("")
+                self._coco_api = None
+
+            print("\n\nCalculate metrics for the whole dataset!!!")
+            _metrics = self.compute_metrics(results)  # type: ignore
+            self._coco_api = None
+   
+            # Add prefix to metric names
+            if self.prefix:
+                _metrics = {
+                    '/'.join((self.prefix, k)): v
+                    for k, v in _metrics.items()
+                }
+            metrics = [_metrics]
+        else:
+            metrics = [None]  # type: ignore
+
+        broadcast_object_list(metrics)
+
+        # reset the results list
+        self.results.clear()
+        return metrics[0]
+        
+def _to_cpu(data: Any) -> Any:
+    """transfer all tensors and BaseDataElement to cpu."""
+    if isinstance(data, (Tensor, BaseDataElement)):
+        return data.to('cpu')
+    elif isinstance(data, list):
+        return [_to_cpu(d) for d in data]
+    elif isinstance(data, tuple):
+        return tuple(_to_cpu(d) for d in data)
+    elif isinstance(data, dict):
+        return {k: _to_cpu(v) for k, v in data.items()}
+    else:
+        return data     
 

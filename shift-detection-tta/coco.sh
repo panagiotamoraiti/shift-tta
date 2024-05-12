@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 
-./scripts/continuous/no_adap_yolox/val_yolox_coco.sh
+./scripts/continuous/mean_teacher_adapter_yolox/val_yolox_cityscapes_baseline.sh
+./scripts/continuous/mean_teacher_adapter_yolox/val_yolox_coco.sh
 
-shutdown -h +1

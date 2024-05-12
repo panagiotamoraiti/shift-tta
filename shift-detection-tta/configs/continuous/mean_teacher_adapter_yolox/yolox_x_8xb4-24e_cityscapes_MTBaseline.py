@@ -238,6 +238,6 @@ randomness = dict(seed=seed, deterministic=True)
 
 # evaluator
 val_evaluator = [
-    dict(type='CityscapesMetric', metric=['bbox'], classwise=True),
+    dict(type='CityscapesMetricNew', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator

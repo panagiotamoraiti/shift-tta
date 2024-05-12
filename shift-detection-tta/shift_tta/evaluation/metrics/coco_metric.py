@@ -93,21 +93,24 @@ class CocoMetricNew(CocoMetric):
             # cast all tensors in results list to cpu
             results = _to_cpu(results)
             
+            print("\n\nCalculate metrics for the whole dataset!!!")
+            _metrics = self.compute_metrics(results)  # type: ignore
+            self._coco_api = None
+            
             # Evaluate each part separately
             num_corruptions = 16
             for i in range(num_corruptions):
                 print(f"\n\nCalculate metrics corruption number {i+1}!!!")
                 print(f"Start: {i*5000}, End: {i*5000+5000}")
                 metrics_corr = self.compute_metrics(results[i*5000:i*5000+5000])
-                self._coco_api = None
-                
-                print(f"\n\n\nMetrics for corruption number {i+1}:", metrics_corr)
+                print(f"\nMetrics for corruption number {i+1}:", metrics_corr)
                 print("")
+                self._coco_api = None
 
             print("\n\nCalculate metrics for the whole dataset!!!")
             _metrics = self.compute_metrics(results)  # type: ignore
             self._coco_api = None
-            
+             
             # Add prefix to metric names
             if self.prefix:
                 _metrics = {

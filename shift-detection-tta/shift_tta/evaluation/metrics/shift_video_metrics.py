@@ -223,12 +223,18 @@ class SHIFTVideoMetric(CocoVideoMetric):
         # break
 
         # Read Json file
+        ###################################################################################################################################
+        ### --Change filename
+        ###################################################################################################################################
         json_path = "/home/panagiota/work/tta/shift-detection-tta/data/shift/continuous/videos/1x/val/front/det_2d.json"
         with open(json_path, 'r') as f:
             json_data = json.load(f)
 
         # Iterate in Json file to find domain shift for each video
         domain_shifts = {}
+        weather_coarse_domain = []
+        timeofday_coarse_domain = []
+        shift_domain = []
         for frame in json_data['frames']:
             video_name = frame['videoName']
             shift_type = frame['attributes']['shift_type']
@@ -237,8 +243,14 @@ class SHIFTVideoMetric(CocoVideoMetric):
                 weather_coarse = frame['attributes']['weather_coarse']
                 timeofday_coarse = frame['attributes']['timeofday_coarse']
 
+                ###################################################################################################################################
+                ### --Change the domain attributes
+                ###################################################################################################################################
                 if weather_coarse == "clear" and timeofday_coarse == "daytime":
                     domain_shifts[video_name] = shift_type
+                    weather_coarse_domain.append(weather_coarse)
+                    timeofday_coarse_domain.append(timeofday_coarse)
+                    shift_domain.append(shift_type)
 
         # Filter results based on img_name and domain_shift to calculate mAP separately
         '''night_start = 180
@@ -277,9 +289,16 @@ class SHIFTVideoMetric(CocoVideoMetric):
         part1_results = []
         part2_results = []
         part3_results = []
+        
+        rain = []
+        fog = []
+        night = []
+        
 
         if is_main_process():
             # Separate images into 3 parts (source, target, loop_back)
+            video_id = 0
+            i = 0
             for result in results:
                 video_name = result[1]["video_name"].split('.')[0]
                 img_name = int(result[1]["img_name"].split('_')[0])
@@ -306,8 +325,18 @@ class SHIFTVideoMetric(CocoVideoMetric):
                     part1_results.append(result)
                 elif start_target < img_name <= end_target:
                     part2_results.append(result)
+                    if shift_domain[video_id-1] == "clear_to_rainy":
+                        rain.append(result)
+                    elif shift_domain[video_id-1] == "clear_to_foggy":
+                        fog.append(result)
+                    elif shift_domain[video_id-1] == "daytime_to_night":
+                        night.append(result) 
                 elif img_name >= start_loopback:
                     part3_results.append(result)
+                    
+                if i % 400 == 0:
+                    video_id += 1
+                i += 1
                     
             print("\nLength of source", len(part1_results))
             print("Length of target", len(part2_results))
@@ -319,25 +348,62 @@ class SHIFTVideoMetric(CocoVideoMetric):
             _metrics = self.compute_metrics(results)  # type: ignore
             self._coco_api = None
             
+            print("########################################################################################")
+            
             # Evaluate each part separately
             print("\n\nCalculate metrics for source domain!!!")
             metrics_part1 = self.compute_metrics(part1_results)
+            print("\nMetrics for source domain:", metrics_part1)
             self._coco_api = None
+            
             print("\n\nCalculate metrics for target domain!!!")
             metrics_part2 = self.compute_metrics(part2_results)
+            print("\nMetrics for target domain:", metrics_part2)
             self._coco_api = None
+            
             print("\n\nCalculate metrics for loop_back domain!!!")
             metrics_part3 = self.compute_metrics(part3_results)
+            print("\nMetrics for loop_back domain:", metrics_part3)
             self._coco_api = None
+            
+            print("########################################################################################")
+
+            # Results for every video
+            num_videos = len(results) // 400
+            for i in range(num_videos):
+                print(f"\n\nCalculate metrics for video {i+1}!!!")
+                print(f"Start: {i*400}, End: {i*400+400}")
+                print(f"Domain starting/ending weather is {weather_coarse_domain[i]} and time of day is {timeofday_coarse_domain[i]}.")
+                print(f"Domain shift is {shift_domain[i]}.")
+                metrics_video = self.compute_metrics(results[i*400:i*400+400])
+                print(f"\nMetrics for video:", metrics_video)
+                self._coco_api = None
+                
+            print("########################################################################################")
+                
+            # Results for every shift separately
+            print("\n\nCalculate metrics for rain domain!!!")
+            metrics_rain = self.compute_metrics(rain)
+            print("\nMetrics for rain domain:", metrics_rain)
+            self._coco_api = None
+            
+            print("\n\nCalculate metrics for fog domain!!!")
+            metrics_fog = self.compute_metrics(fog)
+            print("\nMetrics for fog domain:", metrics_fog)
+            self._coco_api = None
+            
+            print("\n\nCalculate metrics for night domain!!!")
+            metrics_night = self.compute_metrics(night)
+            print("\nMetrics for night domain:", metrics_night)
+            self._coco_api = None
+                
+            print("########################################################################################")
             
             # Evaluate the whole dataset
             print("\n\nCalculate metrics for the whole dataset!!!")
             _metrics = self.compute_metrics(results)  # type: ignore
             self._coco_api = None
             
-            print("\n\n\nMetrics for source domain:", metrics_part1)
-            print("\nMetrics for target domain:", metrics_part2)
-            print("\nMetrics for loop_back domain3:", metrics_part3)
             print("")
             ############################################################
 
