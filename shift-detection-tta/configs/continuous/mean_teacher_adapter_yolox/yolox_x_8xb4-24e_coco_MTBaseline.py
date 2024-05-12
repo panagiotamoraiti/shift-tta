@@ -41,7 +41,7 @@ model = dict(
             optimizer=dict(
                 type='SGD', lr=0.00025, momentum=0.9, weight_decay=5e-4, nesterov=True),
             paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.)),
-        optim_steps=5, # 5
+        optim_steps=1, # 5
         teacher=dict(
             type='ExponentialMovingAverage',
             momentum=0.0002, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight
@@ -380,6 +380,6 @@ randomness = dict(seed=seed, deterministic=True)
 
 # evaluator
 val_evaluator = [
-    dict(type='KittiMetric', metric=['bbox'], classwise=True),
+    dict(type='CocoMetricNew', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator

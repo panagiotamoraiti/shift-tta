@@ -410,6 +410,6 @@ randomness = dict(seed=seed, deterministic=True)
 
 # evaluator
 val_evaluator = [
-    dict(type='KittiMetric', metric=['bbox'], classwise=True),
+    dict(type='CocoMetricNew', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator
