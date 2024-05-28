@@ -51,10 +51,10 @@ model = dict(
             type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
             weight_consistency_loss=0.005,
             weight_contrastive_loss=0.003,
-            contrastive=False,
+            contrastive=True,
         ),
         stochastic_restoration=True,
-        rst_prob=0.01,
+        rst_prob=0.005,
         fixed_source_model=False,
         pipeline = [
             dict(type='LoadImageFromFile'),

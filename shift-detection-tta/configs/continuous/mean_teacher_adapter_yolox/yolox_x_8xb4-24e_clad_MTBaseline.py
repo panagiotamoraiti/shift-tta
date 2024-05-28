@@ -4,11 +4,11 @@ _base_ = [
 ]
 
 
-dataset_type = 'KittiDataset'
-data_root = 'data/kitti/'
+dataset_type = 'CladDataset'
+data_root = 'data/clad'
 attributes = None
 
-ratio = 0.75
+ratio = 0.7
 img_scale = (800*ratio, 1440*ratio) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
 batch_size = 1 ### 2
 
@@ -26,7 +26,7 @@ model = dict(
         ]),
     detector=dict(
         _scope_='mmdet',
-        bbox_head=dict(num_classes=9),
+        bbox_head=dict(num_classes=6),
         test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.7)),
         init_cfg=dict(
             type='Pretrained',
@@ -80,7 +80,7 @@ model = dict(
         views=2,
         plot=True,
         plot_augmented_imgs=False,
-        dataset='kitti'
+        dataset='clad'
     ))
 
 train_pipeline = [
@@ -133,9 +133,9 @@ train_dataset = dict(
     type='mmdet.MultiImageMixDataset',
     dataset=dict(
         type=dataset_type,
-        ann_file=data_root + 'data_object/training/train.json',
-        data_prefix=dict(img=data_root + 'data_object/training'),
-        metainfo=dict(classes=('Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare')),
+        ann_file='clad_train_clear.json',
+        data_prefix=dict(img=data_root + 'train_set/task_1'),
+        metainfo=dict(classes=('Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle')),
         pipeline=[
             dict(type='LoadImageFromFile'),
             dict(type='mmtrack.LoadTrackAnnotations'),
@@ -154,13 +154,28 @@ train_dataloader = dict(
     dataset=train_dataset)
 
 val_dataset=dict(
-    type=dataset_type,
-    ann_file=data_root + 'data_object/training/fog-rain-snow-clear_final.json',
-    data_prefix=dict(img=data_root + 'data_object/training'),
-    test_mode=True,
-    filter_cfg=dict(attributes=attributes),
-    pipeline=test_pipeline,
-    metainfo=dict(classes=('Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare')))
+    type='ConcatDataset',
+        datasets=[
+            dict(
+                type=dataset_type,
+                ann_file=data_root + '/test/clad_test.json',
+                data_prefix=dict(img=data_root + '/test'),
+                test_mode=True,
+                filter_cfg=dict(attributes=attributes),
+                pipeline=test_pipeline,
+                metainfo=dict(classes=('Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle')
+            )),
+            dict(
+                type=dataset_type,
+                ann_file=data_root + '/test/clad_test_clear.json',
+                data_prefix=dict(img=data_root + '/test/task_1'),
+                test_mode=True,
+                filter_cfg=dict(attributes=attributes),
+                pipeline=test_pipeline,
+                metainfo=dict(classes=('Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle')
+            )),
+            ]
+        )   
 val_dataloader = dict(
     batch_size=1,
     num_workers=4,
@@ -238,6 +253,6 @@ randomness = dict(seed=seed, deterministic=True)
 
 # evaluator
 val_evaluator = [
-    dict(type='KittiMetric', metric=['bbox'], classwise=True),
+    dict(type='CladMetric', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator

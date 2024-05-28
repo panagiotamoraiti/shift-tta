@@ -3,14 +3,12 @@ _base_ = [
     '../../_base_/default_runtime.py'
 ]
 
-
-dataset_type = 'KittiDataset'
-data_root = 'data/kitti/'
+dataset_type = 'CladDataset'
+data_root = 'data/clad/'
 attributes = None
 
-ratio = 0.75
-img_scale = (800*ratio, 1440*ratio) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
-batch_size = 1 ### 2
+img_scale = (800, 1440)
+batch_size = 2
 
 model = dict(
     type='AdaptiveDetector',
@@ -26,62 +24,14 @@ model = dict(
         ]),
     detector=dict(
         _scope_='mmdet',
-        bbox_head=dict(num_classes=9),
+        bbox_head=dict(num_classes=6),
         test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.7)),
         init_cfg=dict(
             type='Pretrained',
             checkpoint=  # noqa: E251
             'https://download.openmmlab.com/mmdetection/v2.0/yolox/yolox_x_8x8_300e_coco/yolox_x_8x8_300e_coco_20211126_140254-1ef88d67.pth'  # noqa: E501
         )),
-    adapter=dict(
-        type='MeanTeacherYOLOXAdapterContrastive', ### Use Mean Teacher with Contrastive loss
-        episodic=True,  # do NOT change this. episodic must be set to True for the WVCL ICCV 2023 SHIFT Challenges 
-        optim_wrapper=dict(
-            type='OptimWrapper',
-            optimizer=dict(
-                type='SGD', lr=0.00025, momentum=0.9, weight_decay=5e-4, nesterov=True),
-            paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.)),
-        optim_steps=1, # 5
-        teacher=dict(
-            type='ExponentialMovingAverage',
-            momentum=0.0002, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight
-            update_buffers=True),
-        filter_pseudo_labels=0.7,
-        loss=dict(
-            type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
-            weight_consistency_loss=0.01,
-            weight_contrastive_loss=0.003,
-            contrastive=False,
-        ),
-        stochastic_restoration=False,
-        rst_prob=0.01,
-        fixed_source_model=False,
-        pipeline = [
-            dict(type='LoadImageFromFile'),
-            dict(type='mmtrack.LoadTrackAnnotations'),
-        ],
-        teacher_pipeline = [
-            dict(type='mmdet.Resize', scale=img_scale, keep_ratio=True),
-            dict(
-                type='mmdet.Pad',
-                size_divisor=32,
-                pad_val=dict(img=(114.0, 114.0, 114.0))),
-            dict(type='mmtrack.PackTrackInputs', pack_single_img=True),
-        ],
-        student_pipeline = [
-            dict(type='mmdet.YOLOXHSVRandomAug'),
-            dict(type='mmdet.Resize', scale=img_scale, keep_ratio=True),
-            dict(
-                type='mmdet.Pad',
-                size_divisor=32,
-                pad_val=dict(img=(114.0, 114.0, 114.0))),
-            dict(type='mmtrack.PackTrackInputs', pack_single_img=True),
-        ],
-        views=2,
-        plot=True,
-        plot_augmented_imgs=False,
-        dataset='kitti'
-    ))
+    adapter=None)
 
 train_pipeline = [
     dict(
@@ -133,9 +83,9 @@ train_dataset = dict(
     type='mmdet.MultiImageMixDataset',
     dataset=dict(
         type=dataset_type,
-        ann_file=data_root + 'data_object/training/train.json',
-        data_prefix=dict(img=data_root + 'data_object/training'),
-        metainfo=dict(classes=('Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare')),
+        ann_file=data_root + 'train/clad_train_clear.json',
+        data_prefix=dict(img=data_root + 'train/task_1'),
+        metainfo=dict(classes=('Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle')),
         pipeline=[
             dict(type='LoadImageFromFile'),
             dict(type='mmtrack.LoadTrackAnnotations'),
@@ -155,18 +105,18 @@ train_dataloader = dict(
 
 val_dataset=dict(
     type=dataset_type,
-    ann_file=data_root + 'data_object/training/fog-rain-snow-clear_final.json',
-    data_prefix=dict(img=data_root + 'data_object/training'),
+    ann_file=data_root + 'val/clad_val_clear.json',
+    data_prefix=dict(img=data_root + 'val/task_1'),
     test_mode=True,
     filter_cfg=dict(attributes=attributes),
     pipeline=test_pipeline,
-    metainfo=dict(classes=('Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare')))
+    metainfo=dict(classes=('Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle')))
 val_dataloader = dict(
     batch_size=1,
     num_workers=4,
     persistent_workers=True,
     drop_last=False,
-    sampler=dict(type='DefaultSampler', shuffle=False),
+    sampler=dict(type='DefaultSampler'),
     dataset=val_dataset)
 test_dataloader = val_dataloader
 # optimizer
@@ -180,10 +130,10 @@ optim_wrapper = dict(
 
 # some hyper parameters
 # training settings
-total_epochs = 12
+total_epochs = 24
 num_last_epochs = 2
 resume_from = None
-interval = 5
+interval = 2
 
 train_cfg = dict(
     type='EpochBasedTrainLoop', max_epochs=total_epochs, val_interval=1)
@@ -233,11 +183,8 @@ custom_hooks = [
 ]
 default_hooks = dict(checkpoint=dict(interval=1))
 
-seed = 1234
-randomness = dict(seed=seed, deterministic=True)
-
 # evaluator
 val_evaluator = [
-    dict(type='KittiMetric', metric=['bbox'], classwise=True),
+    dict(type='mmdet.CocoMetric', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator
