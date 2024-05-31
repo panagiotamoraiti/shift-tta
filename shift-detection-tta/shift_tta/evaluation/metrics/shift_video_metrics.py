@@ -75,7 +75,7 @@ class SHIFTVideoMetric(CocoVideoMetric):
                 gt['anns'] = data_sample['instances']
             # add converted result to the results list
             self.results.append((gt, result))
-
+             
     def results2scalabel(self, results: Sequence[dict],
                      outfile_prefix: str) -> dict:
         """Dump the detection results to a Scalabel style json file.
