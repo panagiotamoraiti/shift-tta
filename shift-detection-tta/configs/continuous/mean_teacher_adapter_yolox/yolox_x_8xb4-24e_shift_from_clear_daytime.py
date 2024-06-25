@@ -42,7 +42,7 @@ model = dict(
                 type='SGD', lr=0.00025, momentum=0.9, weight_decay=5e-4, nesterov=True), # lr=0.00025
                 #type='Adam', lr=0.000025, weight_decay=5e-4),
             paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.)),
-        optim_steps=1,
+        optim_steps=5,
         teacher=dict(
             type='ExponentialMovingAverage',
             momentum=0.00035, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight, momentum=0.0002
@@ -54,7 +54,7 @@ model = dict(
             weight_contrastive_loss=0.003,
             contrastive=True,
         ),
-        stochastic_restoration=True,
+        stochastic_restoration=False,
         rst_prob=0.025, #0.05
         fixed_source_model=False,
         pipeline = [

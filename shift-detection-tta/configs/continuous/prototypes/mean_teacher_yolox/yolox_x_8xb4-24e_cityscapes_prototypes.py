@@ -1,14 +1,14 @@
 _base_ = [
-    '../../_base_/models/yolox_x_8x8.py',
-    '../../_base_/default_runtime.py'
+    '../../../_base_/models/yolox_x_8x8.py',
+    '../../../_base_/default_runtime.py'
 ]
 
 
-dataset_type = 'CladDataset'
-data_root = 'data/clad'
-attributes = None
+dataset_type = 'mmdet.datasets.CityscapesDataset'
+data_root = 'data/cityscapes_foggy/leftImg8bit/val/'
+attributes = dict(weather_coarse='all', timeofday_coarse='all')
 
-ratio = 0.7
+ratio = 0.75
 img_scale = (800*ratio, 1440*ratio) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
 batch_size = 1 ### 2
 
@@ -26,7 +26,7 @@ model = dict(
         ]),
     detector=dict(
         _scope_='mmdet',
-        bbox_head=dict(num_classes=6),
+        bbox_head=dict(num_classes=8),
         test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.7)),
         init_cfg=dict(
             type='Pretrained',
@@ -34,21 +34,21 @@ model = dict(
             'https://download.openmmlab.com/mmdetection/v2.0/yolox/yolox_x_8x8_300e_coco/yolox_x_8x8_300e_coco_20211126_140254-1ef88d67.pth'  # noqa: E501
         )),
     adapter=dict(
-        type='MeanTeacherYOLOXAdapterContrastive', ### Use Mean Teacher with Contrastive loss
+        type='MeanTeacherYOLOXAdapterPrototypes', ### Use Mean Teacher with Contrastive loss
         episodic=True,  # do NOT change this. episodic must be set to True for the WVCL ICCV 2023 SHIFT Challenges 
         optim_wrapper=dict(
             type='OptimWrapper',
             optimizer=dict(
                 type='SGD', lr=0.00025, momentum=0.9, weight_decay=5e-4, nesterov=True),
             paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.)),
-        optim_steps=1, # 5
+        optim_steps=5, # 5
         teacher=dict(
             type='ExponentialMovingAverage',
-            momentum=0.00005, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight
+            momentum=0.00035, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight
             update_buffers=True),
         filter_pseudo_labels=0.7,
         loss=dict(
-            type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
+            type='YOLOXConsistencyContrastiveLossProt', ### Define consistency-contrastive loss
             weight_consistency_loss=0.005,
             weight_contrastive_loss=0.003,
             contrastive=True,
@@ -111,7 +111,7 @@ model = dict(
         views=2,
         plot=True,
         plot_augmented_imgs=False,
-        dataset='clad'
+        dataset='cityscapes'
     ))
 
 train_pipeline = [
@@ -164,9 +164,9 @@ train_dataset = dict(
     type='mmdet.MultiImageMixDataset',
     dataset=dict(
         type=dataset_type,
-        ann_file='train/clad_train_clear.json',
-        data_prefix=dict(img=data_root + 'train/task_1'),
-        metainfo=dict(classes=('Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle')),
+        ann_file=data_root + 'leftImg8bit/train/det_2d_cocoformat.json',
+        data_prefix=dict(img=data_root + ''),
+        metainfo=dict(classes=('person', 'rider', 'car', 'train', 'motorcycle', 'bicycle', 'truck', 'bus')),
         pipeline=[
             dict(type='LoadImageFromFile'),
             dict(type='mmtrack.LoadTrackAnnotations'),
@@ -185,28 +185,13 @@ train_dataloader = dict(
     dataset=train_dataset)
 
 val_dataset=dict(
-    type='ConcatDataset',
-        datasets=[
-            dict(
-                type=dataset_type,
-                ann_file=data_root + '/test/clad_test.json',
-                data_prefix=dict(img=data_root + '/test'),
-                test_mode=True,
-                filter_cfg=dict(attributes=attributes),
-                pipeline=test_pipeline,
-                metainfo=dict(classes=('Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle')
-            )),
-            dict(
-                type=dataset_type,
-                ann_file=data_root + '/test/clad_test_clear.json',
-                data_prefix=dict(img=data_root + '/test/task_1'),
-                test_mode=True,
-                filter_cfg=dict(attributes=attributes),
-                pipeline=test_pipeline,
-                metainfo=dict(classes=('Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle')
-            )),
-            ]
-        )  
+    type=dataset_type,
+    ann_file=data_root + '0.005_0.01_0.02_clear.json',
+    data_prefix=dict(img=data_root + ''),
+    test_mode=True,
+    filter_cfg=dict(attributes=attributes),
+    pipeline=test_pipeline,
+    metainfo=dict(classes=('person', 'rider', 'car', 'train', 'motorcycle', 'bicycle', 'truck', 'bus')))
 val_dataloader = dict(
     batch_size=1,
     num_workers=4,
@@ -284,6 +269,6 @@ randomness = dict(seed=seed, deterministic=True)
 
 # evaluator
 val_evaluator = [
-    dict(type='CladMetric', metric=['bbox'], classwise=True),
+    dict(type='CityscapesMetricNew', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator

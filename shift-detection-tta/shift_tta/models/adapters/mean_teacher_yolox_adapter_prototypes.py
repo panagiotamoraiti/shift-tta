@@ -18,8 +18,8 @@ from .base_adapter import BaseAdapter
 
 
 @MODELS.register_module()
-class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
-    """Mean-teacher YOLOX adapter model with contrastive loss.
+class MeanTeacherYOLOXAdapterPrototypes(BaseAdapter):
+    """MeanTeacherYOLOXAdapterPrototypes.
 
     Args:
         teacher (dict): Configuration of teacher. Defaults to None.
@@ -207,9 +207,28 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
         print(len(teacher_predictions[0].bboxes))
         print(len(student_predictions[0].bboxes))
         print()'''
+        
+        if self.dataset == 'shift':
+            epochs = 2400 # Number of images # SHIFT
+            class_names = ["person", "Car", "Truck", "Bus", "Motorcycle", "Bicycle"] # SHIFT
+            prototypes = torch.load('SHIFT_prototypes.pth')
+        elif self.dataset == 'cityscapes':
+            epochs = 2000 # CityScapes
+            class_names = ["Person", "Rider", "Car", "Train", "Motorcycle", "Bicycle", "Truck", "Bus"] # CityScapes
+            prototypes = torch.load('CITYSCAPES_prototypes.pth')
+        elif self.dataset == 'kitti':
+            epochs = 14964 # Kitti
+            class_names = ['Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare'] # Kitti
+        elif self.dataset=="coco":
+            epochs = 80000 # Coco
+            class_names = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'street sign', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'hat', 'backpack', 'umbrella', 'shoe', 'eye glasses', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle', 'plate', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'mirror', 'dining table', 'window', 'desk', 'toilet', 'door', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'blender', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush', 'hair brush'] # Coco
+        elif self.dataset == 'clad':
+            epochs = 9969 # Clad
+            class_names = ['Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle'] # Clad
+        
             
         ### --Consistency-Contrastive loss (includes multi-scale features)
-        loss, consistency_loss, contrastive_loss = self.loss(outs, teacher_outs, teacher_feats, student_feats, teacher_orig_predictions, img_width, img_height)
+        loss, consistency_loss, contrastive_loss = self.loss(outs, teacher_outs, teacher_feats, student_feats, teacher_orig_predictions, img_width, img_height, prototypes)
         
         self.s +=1
         if self.s % self.optim_steps == 0:
@@ -230,22 +249,7 @@ class MeanTeacherYOLOXAdapterContrastive(BaseAdapter):
             teacher_score = teacher_orig_predictions[0].scores
             teacher_label = teacher_orig_predictions[0].labels
             
-            if self.dataset == 'shift':
-                epochs = 2400 # Number of images # SHIFT
-                class_names = ["person", "Car", "Truck", "Bus", "Motorcycle", "Bicycle"] # SHIFT
-            elif self.dataset == 'cityscapes':
-                epochs = 2000 # CityScapes
-                class_names = ["Person", "Rider", "Car", "Train", "Motorcycle", "Bicycle", "Truck", "Bus"] # CityScapes
-            elif self.dataset == 'kitti':
-                epochs = 14964 # Kitti
-                class_names = ['Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare'] # Kitti
-            elif self.dataset=="coco":
-                epochs = 80000 # Coco
-                class_names = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'street sign', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'hat', 'backpack', 'umbrella', 'shoe', 'eye glasses', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle', 'plate', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'mirror', 'dining table', 'window', 'desk', 'toilet', 'door', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'blender', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush', 'hair brush'] # Coco
-            elif self.dataset == 'clad':
-                epochs = 9969 # Clad
-                class_names = ['Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle'] # Clad
-            
+                        
             if self.plot_augmented_imgs:
                 for i in range(len(student_imgs)):
                     student_img = student_imgs[i].permute(1, 2, 0).cpu().numpy()

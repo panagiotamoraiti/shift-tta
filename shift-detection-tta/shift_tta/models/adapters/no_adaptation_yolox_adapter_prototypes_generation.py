@@ -16,7 +16,6 @@ from mmcv.ops import soft_nms, nms
 from shift_tta.registry import MODELS
 from .base_adapter import BaseAdapter
 
-from transformers import (AutoProcessor, AutoModelForZeroShotObjectDetection,)
 from PIL import Image
 from torchvision import transforms
 from mmdet.models.utils.misc import samplelist_boxtype2tensor
@@ -25,7 +24,7 @@ from mmcv.ops.nms import batched_nms
 
 
 @MODELS.register_module()
-class NoAdaptationYOLOXDinoAdapter(BaseAdapter):
+class NoAdaptationYOLOXAdapterPrototypesGeneration(BaseAdapter):
     """Mean-teacher YOLOX adapter model with contrastive loss.
 
     Args:
@@ -50,7 +49,7 @@ class NoAdaptationYOLOXDinoAdapter(BaseAdapter):
                      weight_consistency_loss = 0.01,
                      weight_contrastive_loss = 0.01,
                      contrastive = False,
-                     filter_pseudo_labels=None
+                     filter_pseudo_labels=None,
                  ),
                  pipeline: Optional[list[dict]] = None,
                  teacher_pipeline: Optional[list[dict]] = None,
@@ -94,13 +93,8 @@ class NoAdaptationYOLOXDinoAdapter(BaseAdapter):
         self.plot = plot
         self.plot_augmented_imgs = plot_augmented_imgs
         self.dataset = dataset
-        
-        ### --Add Grounding Dino Inference
-        model_id = "IDEA-Research/grounding-dino-tiny"
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.processor = AutoProcessor.from_pretrained(model_id)
-        self.model_dino = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(self.device)
-
+        self.prototypes = None
+        self.prototypes_count = None
 
         # TODO: implement param_scheduler for optimizer (e.g. lr decay)
 
@@ -125,7 +119,6 @@ class NoAdaptationYOLOXDinoAdapter(BaseAdapter):
             # Create a deep copy of the model for restoration
             self.fixed_model = deepcopy(model)
  
-
     def _reset_optimizer(self) -> None:
         """Reset optimizer state.
         
@@ -186,159 +179,141 @@ class NoAdaptationYOLOXDinoAdapter(BaseAdapter):
         # teacher forward ### -> self.teacher.module is the teacher
         teacher_det_results, teacher_outs, teacher_feats, teacher_predictions, teacher_orig_predictions = self._detect_forward(
             self.teacher.module.detector, teacher_img, teacher_data_samples)
-           
             
-        ### --Add Grounding Dino Inference
+        teacher_outs = self._expand_view(teacher_outs, views=self.views)         
+        teacher_outs = dict(
+            cls_score=teacher_outs[0],
+            bbox_pred=teacher_outs[1],
+            objectness=teacher_outs[2])
+
+        # student forward ### -> model is the student
+        _, outs, student_feats, student_predictions, _ = self._detect_forward(
+            model.detector, student_imgs, student_data_samples)
+        outs = dict(
+            cls_score=outs[0],
+            bbox_pred=outs[1],
+            objectness=outs[2])
+            
+        # Extract image width and height
+        img_height = teacher_img.shape[2]
+        img_width = teacher_img.shape[3]
+        
         if self.dataset == 'shift':
-            text = "pedestrian . car . truck . bus . motorcycle . bicycle ."
-            class_names ={"pedestrian": 0, "car": 1, "truck": 2, "bus": 3, "motorcycle": 4, "bicycle": 5}
+            epochs = 2800 # Number of images # SHIFT
+            class_names = ["person", "Car", "Truck", "Bus", "Motorcycle", "Bicycle"] # SHIFT
         elif self.dataset == 'cityscapes':
-            text = "person . rider . car . train . motorcycle . bicycle . truck . bus ."
-            class_names ={"person": 0, "rider": 1, "car": 2, "train": 3, "motorcycle": 4, "bicycle": 5, "truck": 6, "bus": 7} 
+            epochs = 500 # CityScapes
+            class_names = ["Person", "Rider", "Car", "Train", "Motorcycle", "Bicycle", "Truck", "Bus"] # CityScapes
         elif self.dataset == 'kitti':
-            pass 
+            epochs = 14964 # Kitti
+            class_names = ['Car', 'Van', 'Pedestrian', 'Cyclist', 'Truck', 'Misc', 'Tram', 'Person_sitting', 'DontCare'] # Kitti
         elif self.dataset=="coco":
-            text = 'person. bicycle. car. motorcycle. airplane. bus. train. truck. boat.'
-            
-            class_names = {
-            "person": 0,
-            "bicycle": 1,
-            "car": 2,
-            "motorcycle": 3,
-            "airplane": 4,
-            "bus": 5,
-            "train": 6,
-            "truck": 7,
-            "boat": 8,
-            "trafficlight": 9,
-            "firehydrant": 10,
-            "streetsign": 11,
-            "stopsign": 12,
-            "parkingmeter": 13,
-            "bench": 14,
-            "bird": 15,
-            "cat": 16,
-            "dog": 17,
-            "horse": 18,
-            "sheep": 19,
-            "cow": 20,
-            "elephant": 21,
-            "bear": 22,
-            "zebra": 23,
-            "giraffe": 24,
-            "hat": 25,
-            "backpack": 26,
-            "umbrella": 27,
-            "shoe": 28,
-            "eyeglasses": 29,
-            "handbag": 30,
-            "tie": 31,
-            "suitcase": 32,
-            "frisbee": 33,
-            "skis": 34,
-            "snowboard": 35,
-            "sports ball": 36,
-            "kite": 37,
-            "baseballbat": 38,
-            "baseballglove": 39,
-            "skateboard": 40,
-            "surfboard": 41,
-            "tennisracket": 42,
-            "bottle": 43,
-            "plate": 44,
-            "wineglass": 45,
-            "cup": 46,
-            "fork": 47,
-            "knife": 48,
-            "spoon": 49,
-            "bowl": 50,
-            "banana": 51,
-            "apple": 52,
-            "sandwich": 53,
-            "orange": 54,
-            "broccoli": 55,
-            "carrot": 56,
-            "hotdog": 57,
-            "pizza": 58,
-            "donut": 59,
-            "cake": 60,
-            "chair": 61,
-            "couch": 62,
-            "potted plant": 63,
-            "bed": 64,
-            "mirror": 65,
-            "dining table": 66,
-            "window": 67,
-            "desk": 68,
-            "toilet": 69,
-            "door": 70,
-            "tv": 71,
-            "laptop": 72,
-            "mouse": 73,
-            "remote": 74,
-            "keyboard": 75,
-            "cell phone": 76,
-            "microwave": 77,
-            "oven": 78,
-            "toaster": 79,
-            "sink": 80,
-            "refrigerator": 81,
-            "blender": 82,
-            "book": 83,
-            "clock": 84,
-            "vase": 85,
-            "scissors": 86,
-            "teddybear": 87,
-            "hairdrier": 88,
-            "toothbrush": 89,
-            "hairbrush": 90
-            }
-
+            epochs = 80000 # Coco
+            class_names = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'street sign', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'hat', 'backpack', 'umbrella', 'shoe', 'eye glasses', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle', 'plate', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'mirror', 'dining table', 'window', 'desk', 'toilet', 'door', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'blender', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush', 'hair brush'] # Coco
         elif self.dataset == 'clad':
-            pass
+            epochs = 9969 # Clad
+            class_names = ['Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle'] # Clad
+                     
+        ### --For Prototypes
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        feature_size = 320
+        num_classes = len(class_names)
+        num_scales = 3
+        
+        if self.s == 0:
+            # Initialize the prototypes list, contains a list for each class, each of these contain 3 tensors
+            self.prototypes = [[torch.zeros(feature_size).to(device) for _ in range(num_scales)] for _ in range(num_classes)]
+            self.prototypes_count = [0  for _ in range(num_classes)]
+            # print(self.prototypes_count)
+            # print(self.prototypes[0][0].shape)
+        
+        # Get Ground Truth bboxes
+        gt_instances = [teacher_det_results[0].gt_instances]
+        # print(gt_instances)
 
-        to_pil = transforms.ToPILImage()
+        # Retrieving gt_bboxes and gt_labels
+        # gt_bboxes = gt_instances[0].bboxes
+        # gt_labels = gt_instances[0].labels
+        ###
         
-        # Convert tensor to PIL image
-        image = to_pil(teacher_img[0, :, :, :])
-        inputs = self.processor(images=image, text=text, return_tensors="pt").to(self.device)
-        with torch.no_grad():
-            outputs = self.model_dino(**inputs)
-        preds = self.processor.post_process_grounded_object_detection(
-            outputs,
-            inputs.input_ids,
-            box_threshold=0.5,
-            text_threshold=0.5,
-            target_sizes=[image.size[::-1]]
-        )
-        
-        labels = preds[0]["labels"]
-        # print(labels)
-        scores = preds[0]["scores"]
-        boxes = preds[0]["boxes"]
-        
-        labels = [label.split()[0] for label in labels]
-        label_indexes = [class_names[label] for label in labels]
-        label_indexes = torch.tensor(label_indexes)
+        ### --Consistency-Contrastive loss (includes multi-scale features), *** Also Save class prototypes
+        # loss, consistency_loss, contrastive_loss = self.loss(outs, teacher_outs, teacher_feats, student_feats, teacher_orig_predictions, img_width, img_height)
+        # Instead of Teachers' predictions use Ground Truths to Extract Feature Prototypes for each class
+        loss, consistency_loss, contrastive_loss, self.prototypes, self.prototypes_count = self.loss(outs, teacher_outs, teacher_feats, student_feats, gt_instances, 
+                                                                                                     img_width, img_height, self.prototypes, self.prototypes_count)
+                          
+        if self.s == epochs*self.optim_steps-1:                                                            
+            ### --At the end compute prototypes and save
+            for i in range(num_classes):
+                for j in range(num_scales):
+                    self.prototypes[i][j] = self.prototypes[i][j] / self.prototypes_count[i]
+            # print(self.prototypes)
+            # print(self.prototypes_count)
+            
+            # Save prototypes_copy using torch.save
+            torch.save(self.prototypes, 'prototypes.pth')
+            
+            # loaded_prototypes = torch.load('prototypes.pth')
+  
+        self.s +=1
+        if self.s % self.optim_steps == 0:
+            self.steps.append(self.s)
+            
+            self.steps.append(self.s)
+            self.final_losses.append(loss.detach().cpu().numpy())
+            self.consistency_losses.append(consistency_loss.detach().cpu().numpy())
+            self.contrastive_losses.append(contrastive_loss.detach().cpu().numpy())
+            '''print("Step:", self.s//self.optim_steps)
+            print("Consistency loss:", consistency_loss)
+            print("Contrastive loss:", contrastive_loss)
+            print("Final loss:", loss)
+            print()'''
 
-        # Convert detections to a list of InstanceData
-        results_list = []
-        pred_det_instances = InstanceData()
-        pred_det_instances.labels = label_indexes
-        pred_det_instances.bboxes = boxes[:, :4] # (N, 4)
-        pred_det_instances.scores = scores
-        
-        batch_img_metas = [
-            data_samples.metainfo for data_samples in dino_data_samples
-        ]
-        for img_id, img_meta in enumerate(batch_img_metas):
-            pred_det_instances = _bbox_post_process(pred_det_instances, cfg=self.teacher.module.detector.bbox_head.test_cfg, rescale=True, img_meta=img_meta, with_nms=True) 
-        results_list.append(pred_det_instances)
-        
-        dino_det_results = add_pred_to_datasample(dino_data_samples, results_list)
-        
-        return dino_det_results
+            ### -- Save augmented image of the student with bboxes
+            teacher_img_vis = teacher_img[0].permute(1, 2, 0).cpu().numpy()
+            teacher_img_vis = cv2.cvtColor(teacher_img_vis, cv2.COLOR_BGR2RGB)
+            teacher_reg_boxes = teacher_orig_predictions[0].bboxes
+            teacher_score = teacher_orig_predictions[0].scores
+            teacher_label = teacher_orig_predictions[0].labels
+     
+            if self.plot_augmented_imgs:
+                for i in range(len(student_imgs)):
+                    student_img = student_imgs[i].permute(1, 2, 0).cpu().numpy()
+                    student_img = cv2.cvtColor(student_img, cv2.COLOR_BGR2RGB)   
+                    #print(student_img.shape[0]) # 608
+                    #print(student_img.shape[1]) # 960
+       
+                    for box, label, score in zip(teacher_reg_boxes, teacher_label, teacher_score):
+                        xmin, ymin, xmax, ymax = map(int, box)
+                        cv2.rectangle(teacher_img_vis, (xmin, ymin), (xmax, ymax), (255, 0, 0), 1)
+                        cv2.rectangle(student_img, (xmin-5, ymin-3), (xmax-5, ymax-3), (255, 0, 0), 1)  
+            
+                        # Add label and score
+                        label_text = f"{class_names[label]} {score:.2f}"
+                        (label_width, label_height), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                        cv2.rectangle(teacher_img_vis, (xmin, ymin - label_height - 8), (xmin + label_width, ymin - 2), (255, 255, 255), -1)
+                        cv2.putText(teacher_img_vis, label_text, (xmin, ymin - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2, cv2.LINE_AA)
 
+                    # Remove normalization for visualization
+                    student_img = student_img.clip(0, 255).astype(np.uint8)
+                    teacher_img_vis = teacher_img_vis.clip(0, 255).astype(np.uint8)
+                    
+                    plt.subplot(1, 2, 1) 
+                    plt.imshow(teacher_img_vis)
+                    plt.title("Teacher Image")
+                    plt.axis('off')
+                    
+                    plt.subplot(1, 2, 2)
+                    plt.imshow(student_img)
+                    plt.title(f"Student Augmented View {i}")
+                    plt.axis('off')
+                    
+                    plt.tight_layout()
+                    plt.savefig(f'results/images/{self.s//5}_img_view{i}.png', dpi=500)
+                    plt.close()       
+           
+        return teacher_det_results   
+        
 
     def adapt(self, model: torch.nn.Module, img: torch.Tensor,
               feats: List[torch.Tensor], data_sample: TrackDataSample,

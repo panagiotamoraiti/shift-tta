@@ -1,4 +1,6 @@
 from .yolox_consistency_loss import YOLOXConsistencyLoss
 from .yolox_consistency_contrastive_loss import YOLOXConsistencyContrastiveLoss
+from .yolox_consistency_contrastive_loss_prot_gen import YOLOXConsistencyContrastiveLossProtGen
+from .yolox_consistency_contrastive_loss_prot import YOLOXConsistencyContrastiveLossProt
 
-__all__ = ['YOLOXConsistencyLoss', 'YOLOXConsistencyContrastiveLoss']
+__all__ = ['YOLOXConsistencyLoss', 'YOLOXConsistencyContrastiveLoss', 'YOLOXConsistencyContrastiveLossProtGen', 'YOLOXConsistencyContrastiveLossProt']

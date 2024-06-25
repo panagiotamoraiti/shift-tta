@@ -1,14 +1,14 @@
 _base_ = [
-    '../../_base_/models/yolox_x_8x8.py',
-    '../../_base_/default_runtime.py'
+    '../../../_base_/models/yolox_x_8x8.py',
+    '../../../_base_/default_runtime.py'
 ]
 
 
-dataset_type = 'CladDataset'
-data_root = 'data/clad'
-attributes = None
+dataset_type = 'SHIFTDataset'
+data_root = 'data/shift/'
+attributes = dict(weather_coarse='clear', timeofday_coarse='daytime')
 
-ratio = 0.7
+ratio = 0.75
 img_scale = (800*ratio, 1440*ratio) ### * 0.75 (600, 1080)) -> (1280, 800) => (960, 600)
 batch_size = 1 ### 2
 
@@ -27,37 +27,43 @@ model = dict(
     detector=dict(
         _scope_='mmdet',
         bbox_head=dict(num_classes=6),
-        test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.7)),
+        test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.7)), # 0.01 0.7
         init_cfg=dict(
             type='Pretrained',
             checkpoint=  # noqa: E251
             'https://download.openmmlab.com/mmdetection/v2.0/yolox/yolox_x_8x8_300e_coco/yolox_x_8x8_300e_coco_20211126_140254-1ef88d67.pth'  # noqa: E501
         )),
     adapter=dict(
-        type='MeanTeacherYOLOXAdapterContrastive', ### Use Mean Teacher with Contrastive loss
+        type='MeanTeacherYOLOXAdapterPrototypes', ### Use Mean Teacher with Contrastive loss
         episodic=True,  # do NOT change this. episodic must be set to True for the WVCL ICCV 2023 SHIFT Challenges 
         optim_wrapper=dict(
             type='OptimWrapper',
             optimizer=dict(
-                type='SGD', lr=0.00025, momentum=0.9, weight_decay=5e-4, nesterov=True),
+                type='SGD', lr=0.00025, momentum=0.9, weight_decay=5e-4, nesterov=True), # lr=0.00025
+                #type='Adam', lr=0.000025, weight_decay=5e-4),
             paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.)),
-        optim_steps=1, # 5
+        optim_steps=5,
         teacher=dict(
             type='ExponentialMovingAverage',
-            momentum=0.00005, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight
+            momentum=0.00035, ### momentum=1-a, controls how much of the student's weights should be added to the existing teacher's weight, momentum=0.0002
             update_buffers=True),
-        filter_pseudo_labels=0.7,
+        filter_pseudo_labels=0.7, # 0.7
         loss=dict(
-            type='YOLOXConsistencyContrastiveLoss', ### Define consistency-contrastive loss
-            weight_consistency_loss=0.005,
+            type='YOLOXConsistencyContrastiveLossProt', ### Define consistency-contrastive loss
+            weight_consistency_loss=0.005, # 0.01
             weight_contrastive_loss=0.003,
             contrastive=True,
         ),
         stochastic_restoration=True,
-        rst_prob=0.01,
+        rst_prob=0.025, #0.05
         fixed_source_model=False,
         pipeline = [
-            dict(type='LoadImageFromFile'),
+            dict(type='LoadImageFromFile',
+                backend_args=dict(
+                    backend='tar',
+                    tar_path=data_root + 'continuous/videos/1x/val/front/img_decompressed.tar',
+                )
+            ),
             dict(type='mmtrack.LoadTrackAnnotations'),
         ],
         teacher_pipeline = [
@@ -111,7 +117,7 @@ model = dict(
         views=2,
         plot=True,
         plot_augmented_imgs=False,
-        dataset='clad'
+        dataset='shift'
     ))
 
 train_pipeline = [
@@ -149,7 +155,12 @@ train_pipeline = [
     dict(type='mmtrack.PackTrackInputs', pack_single_img=True)
 ]
 test_pipeline = [
-    dict(type='LoadImageFromFile'),
+    dict(type='LoadImageFromFile',
+         backend_args=dict(
+             backend='tar',
+             tar_path=data_root + 'continuous/videos/1x/val/front/img_decompressed.tar',
+         )
+    ),
     dict(type='mmtrack.LoadTrackAnnotations'),
     dict(type='mmdet.Resize', scale=img_scale, keep_ratio=True),
     dict(
@@ -163,12 +174,19 @@ train_dataset = dict(
     # use MultiImageMixDataset wrapper to support mosaic and mixup
     type='mmdet.MultiImageMixDataset',
     dataset=dict(
-        type=dataset_type,
-        ann_file='train/clad_train_clear.json',
-        data_prefix=dict(img=data_root + 'train/task_1'),
-        metainfo=dict(classes=('Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle')),
+        type='SHIFTDataset',
+        load_as_video=False,
+        ann_file=data_root + 'discrete/images/train/front/det_2d_cocoformat.json',
+        data_prefix=dict(img=''),
+        ref_img_sampler=None,
+        metainfo=dict(classes=('pedestrian', 'car', 'truck', 'bus', 'motorcycle', 'bicycle')),
         pipeline=[
-            dict(type='LoadImageFromFile'),
+            dict(type='LoadImageFromFile', 
+                backend_args=dict(
+                    backend='zip',
+                    zip_path=data_root + 'discrete/images/train/front/img.zip',
+                )
+            ),
             dict(type='mmtrack.LoadTrackAnnotations'),
         ],
         filter_cfg=dict(
@@ -185,43 +203,31 @@ train_dataloader = dict(
     dataset=train_dataset)
 
 val_dataset=dict(
-    type='ConcatDataset',
-        datasets=[
-            dict(
-                type=dataset_type,
-                ann_file=data_root + '/test/clad_test.json',
-                data_prefix=dict(img=data_root + '/test'),
-                test_mode=True,
-                filter_cfg=dict(attributes=attributes),
-                pipeline=test_pipeline,
-                metainfo=dict(classes=('Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle')
-            )),
-            dict(
-                type=dataset_type,
-                ann_file=data_root + '/test/clad_test_clear.json',
-                data_prefix=dict(img=data_root + '/test/task_1'),
-                test_mode=True,
-                filter_cfg=dict(attributes=attributes),
-                pipeline=test_pipeline,
-                metainfo=dict(classes=('Pedestrian', 'Cyclist', 'Car', 'Truck', 'Tram', 'Tricycle')
-            )),
-            ]
-        )  
+    type='SHIFTDataset',
+    load_as_video=True,
+    ann_file=data_root + 'continuous/videos/1x/val/front/det_2d_cocoformat.json',
+    data_prefix=dict(img=''),
+    ref_img_sampler=None,
+    test_mode=True,
+    filter_cfg=dict(attributes=attributes),
+    pipeline=test_pipeline,
+    metainfo=dict(classes=('pedestrian', 'car', 'truck', 'bus', 'motorcycle', 'bicycle')))
 val_dataloader = dict(
     batch_size=1,
     num_workers=4,
     persistent_workers=True,
     drop_last=False,
-    sampler=dict(type='DefaultSampler', shuffle=False),
+    sampler=dict(type='mmtrack.VideoSampler'),
     dataset=val_dataset)
 test_dataloader = val_dataloader
 # optimizer
 # default 8 gpu
-lr = 0.0005 / 8 * batch_size
+lr = 0.00005 / 8 * batch_size
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
         type='SGD', lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True),
+        #type='Adam', lr=lr, weight_decay=5e-4),
     paramwise_cfg=dict(norm_decay_mult=0., bias_decay_mult=0.))
 
 # some hyper parameters
@@ -284,6 +290,6 @@ randomness = dict(seed=seed, deterministic=True)
 
 # evaluator
 val_evaluator = [
-    dict(type='CladMetric', metric=['bbox'], classwise=True),
+    dict(type='SHIFTVideoMetric', metric=['bbox'], classwise=True),
 ]
 test_evaluator = val_evaluator
