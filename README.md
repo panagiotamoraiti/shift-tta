@@ -25,7 +25,7 @@ In addition to the original benchmark dataset from the VCL@ICCV2023 challenge, t
 - **CLAD-D**
 - **COCO**
 
-These evaluations demonstrated the method's robustness and generalization capability under various distribution shifts.
+These evaluations demonstrated the method's robustness and generalization capability under various domain shifts.
 
 ## Acknowledgements
 
