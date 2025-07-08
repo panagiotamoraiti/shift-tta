@@ -19,11 +19,11 @@ The proposed method was published in:
 
 ## Evaluation
 
-In addition to the original benchmark dataset from the VCL@ICCV2023 challenge, the proposed method was further evaluated on four diverse datasets:
+In addition to the original benchmark dataset from the VCL@ICCV2023 challenge, the proposed method was further evaluated on four diverse datasets, specifically modified for the continual test-time adaptation setting:
 - **KITTI**
 - **Cityscapes**
 - **CLAD-D**
-- **Corrupted-COCO**
+- **COCO**
 
 These evaluations demonstrated the method's robustness and generalization capability under various distribution shifts.
 
