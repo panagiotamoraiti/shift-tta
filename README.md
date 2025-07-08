@@ -15,7 +15,7 @@ The combination of these techniques led to consistent performance improvements o
 The proposed method was published in:
 
 - **SETN 2024, AI Conference**  
-  [ACM Digital Library Link](https://dl.acm.org/doi/10.1145/3688671.3688755)
+  [Mean Teacher with Stochastic Restoration and Contrastive Learning for Domain Adaptive Object Detection](https://dl.acm.org/doi/10.1145/3688671.3688755)
 
 ## Evaluation
 
