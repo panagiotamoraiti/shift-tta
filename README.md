@@ -1,4 +1,4 @@
-# shift-tta (test-time adaptation)
+# shift-tta (Test-Time Adaptation)
 
 This repository contains the code developed as part of my [**diploma dissertation thesis**](https://drive.google.com/file/d/1GbQM4dtU-hiPv5iGilRl1_kHJ-4HBvYB/view), titled "Continual Learning For Object Detection". The work builds upon the repository provided for the **Test-time Adaptation (TTA) Challenge** at the **Visual Continual Learning (VCL) Workshop**, **ICCV 2023**.
 
