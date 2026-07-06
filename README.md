@@ -17,6 +17,9 @@ The proposed method was published in:
 - **SETN 2024, AI Conference**  
   [Mean Teacher with Stochastic Restoration and Contrastive Learning for Domain Adaptive Object Detection](https://dl.acm.org/doi/10.1145/3688671.3688755)
 
+- **The European Journal on Artificial Intelligence**
+-   [Continual Test-Time Domain Adaptation for Object Detection via Contrastive Mean Teacher and Stochastic Restoration](https://doi.org/10.1177/30504554251394323)
+
 ## Evaluation
 
 In addition to the original benchmark dataset from the VCL@ICCV2023 challenge, the proposed method was further evaluated on four diverse datasets, specifically modified for the continual test-time adaptation setting:
